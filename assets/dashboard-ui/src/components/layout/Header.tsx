@@ -14,7 +14,7 @@ export function Header({ onMenu, sidebarExpanded, menuLabel }: HeaderProps) {
   const queryClient = useQueryClient()
   const health = useHealthQuery()
   const isRefreshing = health.isFetching
-  const status = health.data?.status ?? 'unknown'
+  const status = health.isError ? 'error' : health.data?.status ?? 'unknown'
   const opencode = health.data?.opencode ?? health.data?.openCode
 
   function refresh() {

@@ -60,7 +60,7 @@ func LoadRuntimeFromEnvironment(home string, getenv func(string) string) (Runtim
 
 	configDir := filepath.Join(configHome, "dashboard.locals")
 	runtimeConfig := Runtime{
-		ListenAddr:       valueOr(getenv("DASHBOARD_LOCALS_LISTEN_ADDR"), "127.0.0.1:8080"),
+		ListenAddr:       valueOr(getenv("DASHBOARD_LOCALS_LISTEN_ADDR"), "127.0.0.1:8443"),
 		ConfigDir:        configDir,
 		DatabasePath:     filepath.Join(configDir, "database.sqlite"),
 		SearchTimeout:    defaultSearchTimeout,

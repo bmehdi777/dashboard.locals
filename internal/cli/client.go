@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultServerURL   = "http://127.0.0.1:8080"
+	defaultServerURL   = "http://127.0.0.1:8443"
 	defaultHTTPTimeout = 30 * time.Second
 	maxResponseSize    = 16 << 20
 )

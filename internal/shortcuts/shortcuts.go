@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -22,11 +23,16 @@ type Repository interface {
 }
 
 type Service struct {
-	repo Repository
+	repo    Repository
+	favicon *faviconFetcher
 }
 
 func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+	return NewServiceWithHTTPClient(repo, nil)
+}
+
+func NewServiceWithHTTPClient(repo Repository, client *http.Client) *Service {
+	return &Service{repo: repo, favicon: newFaviconFetcher(client)}
 }
 
 func (s *Service) List(ctx context.Context, sortBy string, limit int) ([]store.Shortcut, error) {

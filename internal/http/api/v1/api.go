@@ -47,6 +47,7 @@ func NewHandler(dependencies Dependencies) *Handler {
 	handler.mux.HandleFunc("/api/v1/", handler.notFound)
 	handler.mux.HandleFunc("/api/v1/health", handler.health)
 	handler.mux.HandleFunc("/api/v1/settings", handler.settings)
+	handler.mux.HandleFunc("/api/v1/shortcuts/{shortcutID}/favicon", handler.shortcutFavicon)
 	handler.mux.HandleFunc("/api/v1/shortcuts/{shortcutID}/use", handler.useShortcut)
 	handler.mux.HandleFunc("/api/v1/shortcuts/{shortcutID}", handler.shortcut)
 	handler.mux.HandleFunc("/api/v1/shortcuts", handler.shortcuts)
@@ -317,6 +318,26 @@ func (h *Handler) useShortcut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, shortcut)
+}
+
+func (h *Handler) shortcutFavicon(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if h.dependencies.Shortcuts == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "shortcut service is unavailable")
+		return
+	}
+	data, contentType, err := h.dependencies.Shortcuts.Favicon(r.Context(), r.PathValue("shortcutID"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 type CreateRootRequest struct {
@@ -882,6 +903,10 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusBadRequest, "invalid_request", "request validation failed"
 	case errors.Is(err, shortcuts.ErrInvalidShortcut):
 		return http.StatusBadRequest, "invalid_shortcut", "shortcut validation failed"
+	case errors.Is(err, shortcuts.ErrFaviconNotFound):
+		return http.StatusNotFound, "favicon_not_found", "shortcut favicon was not found"
+	case errors.Is(err, shortcuts.ErrFaviconUnavailable):
+		return http.StatusBadGateway, "favicon_unavailable", "shortcut favicon is unavailable"
 	case errors.Is(err, search.ErrInvalidHistory):
 		return http.StatusBadRequest, "invalid_history", "search history entry is invalid"
 	case errors.Is(err, search.ErrRootNotFound), errors.Is(err, store.ErrNotFound):

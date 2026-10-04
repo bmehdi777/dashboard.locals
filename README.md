@@ -82,7 +82,7 @@ nécessaire.
 
 La collection Bruno contenant les requêtes de l'API se trouve dans
 `.bruno`. L'environnement `local` utilise par défaut
-`http://127.0.0.1:8080`.
+`http://127.0.0.1:8443`.
 
 ## Raccourcis
 
@@ -96,6 +96,7 @@ POST   /api/v1/shortcuts
 PATCH  /api/v1/shortcuts/{shortcutID}
 DELETE /api/v1/shortcuts/{shortcutID}
 POST   /api/v1/shortcuts/{shortcutID}/use
+GET    /api/v1/shortcuts/{shortcutID}/favicon
 ```
 
 Les URLs sont validées côté serveur et doivent utiliser `http` ou `https`.

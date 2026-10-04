@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Edit3, ExternalLink, Link2, Trash2 } from 'lucide-react'
 import type { Shortcut } from '../../api'
 import { Button } from '../../components/ui/Button'
@@ -16,6 +17,7 @@ export function ShortcutCard({
   onDelete?: (shortcut: Shortcut) => void
 }) {
   const useMutation = useRecordShortcutUseMutation()
+  const [faviconFailed, setFaviconFailed] = useState(false)
 
   function recordUse() {
     useMutation.mutate(shortcut.id)
@@ -31,7 +33,9 @@ export function ShortcutCard({
         onClick={recordUse}
       >
         <div className="shortcut-card-heading">
-          <span className="shortcut-card-icon" aria-hidden="true"><Link2 size={19} /></span>
+          <span className="shortcut-card-icon" aria-hidden="true">
+            {faviconFailed ? <Link2 size={19} /> : <img src={`/api/v1/shortcuts/${encodeURIComponent(shortcut.id)}/favicon`} alt="" onError={() => setFaviconFailed(true)} />}
+          </span>
           <span className="shortcut-card-open"><ExternalLink size={15} aria-hidden="true" /></span>
         </div>
         <strong className="shortcut-card-title">{shortcut.title}</strong>
@@ -72,7 +76,7 @@ export function ShortcutGrid({
     <div className={`shortcut-grid ${className}`.trim()}>
       {shortcuts.map((shortcut) => (
         <ShortcutCard
-          key={shortcut.id}
+          key={`${shortcut.id}:${shortcut.url}`}
           shortcut={shortcut}
           editable={editable}
           onEdit={onEdit}

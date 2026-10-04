@@ -445,6 +445,14 @@
   border-radius: 10px;
 }
 
+.shortcut-card-icon img {
+  display: block;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
 .shortcut-card-open {
   display: grid;
   width: 28px;

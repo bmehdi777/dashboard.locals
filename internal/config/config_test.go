@@ -23,6 +23,24 @@ func TestLoadRuntimeUsesXDGConfigHome(t *testing.T) {
 	if runtime.ConfigDir != wantDir || runtime.DatabasePath != filepath.Join(wantDir, "database.sqlite") {
 		t.Fatalf("unexpected paths: %+v", runtime)
 	}
+	if runtime.ListenAddr != "127.0.0.1:8443" {
+		t.Fatalf("default listen address = %q, want 127.0.0.1:8443", runtime.ListenAddr)
+	}
+}
+
+func TestLoadRuntimeAllowsListenAddressOverride(t *testing.T) {
+	runtime, err := LoadRuntimeFromEnvironment(t.TempDir(), func(key string) string {
+		if key == "DASHBOARD_LOCALS_LISTEN_ADDR" {
+			return "127.0.0.1:19090"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.ListenAddr != "127.0.0.1:19090" {
+		t.Fatalf("listen address = %q, want override", runtime.ListenAddr)
+	}
 }
 
 func TestLoadRuntimeRejectsRelativeXDGPath(t *testing.T) {

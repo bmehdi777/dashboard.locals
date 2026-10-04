@@ -16,7 +16,7 @@ export function useHealthQuery() {
     queryKey: queryKeys.health,
     queryFn: healthApi.get,
     retry: false,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
     staleTime: 15_000,
   })
 }
