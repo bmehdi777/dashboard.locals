@@ -21,7 +21,7 @@ func TestSyncIsIdempotentAndCompactDryRunDoesNotDeleteRaw(t *testing.T) {
 			_, _ = w.Write([]byte(`{"version":"test"}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"range":{"from":1700000000000,"to":1700003600000},"sessions":1,"subagents":0,"prompts":2,"steps":3,"tokens":{"input":4,"output":5,"reasoning":6,"cache":{"read":7,"write":8}},"cost":0.5,"tools":{"mode":"summary"},"activeDays":1,"streak":1,"activity":[],"models":[]}}`))
+		_, _ = w.Write([]byte(`{"data":{"range":{"from":1700000000000,"to":1791139951873},"sessions":1,"subagents":0,"prompts":2,"steps":3,"tokens":{"input":4,"output":5,"reasoning":6,"cache":{"read":7,"write":8}},"cost":0.5,"tools":{"mode":"summary"},"activeDays":1,"streak":1,"activity":[],"models":[]}}`))
 	}))
 	defer server.Close()
 	servicePath := filepath.Join(t.TempDir(), "service.json")
@@ -51,6 +51,10 @@ func TestSyncIsIdempotentAndCompactDryRunDoesNotDeleteRaw(t *testing.T) {
 	}
 	if first.RawCreated != 1 || second.RawCreated != 0 || second.RawExisting != 1 {
 		t.Fatalf("unexpected idempotence result: first=%+v second=%+v", first, second)
+	}
+	rawRows, err := database.ListRawStats(context.Background(), opencode.Source, "", nil)
+	if err != nil || len(rawRows) != 1 {
+		t.Fatalf("synchronization created duplicate raw rows: %d, %v", len(rawRows), err)
 	}
 	before := to.Add(time.Hour)
 	compact, err := service.Compact(context.Background(), CompactRequest{Before: before, Granularity: "daily", DryRun: true})

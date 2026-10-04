@@ -30,6 +30,24 @@ La collection Bruno contenant les requêtes de l'API se trouve dans
 `.bruno`. L'environnement `local` utilise par défaut
 `http://127.0.0.1:8080`.
 
+## Raccourcis
+
+Les raccourcis sont enregistrés dans SQLite et peuvent être gérés depuis la
+page **Raccourcis** de l'interface. L'accueil affiche automatiquement les cinq
+liens les plus ouverts. L'API correspondante est :
+
+```text
+GET    /api/v1/shortcuts?sort=recent|popular&limit=5
+POST   /api/v1/shortcuts
+PATCH  /api/v1/shortcuts/{shortcutID}
+DELETE /api/v1/shortcuts/{shortcutID}
+POST   /api/v1/shortcuts/{shortcutID}/use
+```
+
+Les URLs sont validées côté serveur et doivent utiliser `http` ou `https`.
+L'appel `use` est effectué lorsque l'utilisateur ouvre un panneau afin de
+maintenir le classement des liens les plus utilisés.
+
 ## CLI
 
 La CLI communique avec le daemon uniquement via l'API HTTP. Le daemon doit être

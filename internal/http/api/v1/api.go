@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"dashboard.locals/internal/launcher"
 	"dashboard.locals/internal/opencode"
 	"dashboard.locals/internal/search"
+	"dashboard.locals/internal/shortcuts"
 	"dashboard.locals/internal/stats"
 	"dashboard.locals/internal/store"
 )
@@ -23,13 +25,15 @@ type OpenCodeDetector interface {
 }
 
 type Dependencies struct {
-	Settings *config.Service
-	Roots    *search.RootService
-	Search   *search.Service
-	Launcher *launcher.Service
-	Stats    *stats.Service
-	OpenCode OpenCodeDetector
-	Version  string
+	Settings  *config.Service
+	Roots     *search.RootService
+	Search    *search.Service
+	Launcher  *launcher.Service
+	Stats     *stats.Service
+	History   *search.HistoryService
+	Shortcuts *shortcuts.Service
+	OpenCode  OpenCodeDetector
+	Version   string
 }
 
 type Handler struct {
@@ -43,9 +47,15 @@ func NewHandler(dependencies Dependencies) *Handler {
 	handler.mux.HandleFunc("/api/v1/", handler.notFound)
 	handler.mux.HandleFunc("/api/v1/health", handler.health)
 	handler.mux.HandleFunc("/api/v1/settings", handler.settings)
+	handler.mux.HandleFunc("/api/v1/shortcuts/{shortcutID}/use", handler.useShortcut)
+	handler.mux.HandleFunc("/api/v1/shortcuts/{shortcutID}", handler.shortcut)
+	handler.mux.HandleFunc("/api/v1/shortcuts", handler.shortcuts)
 	handler.mux.HandleFunc("/api/v1/search-roots", handler.searchRoots)
 	handler.mux.HandleFunc("/api/v1/search-roots/{rootID}", handler.searchRoot)
+	handler.mux.HandleFunc("/api/v1/search/stream", handler.searchStream)
 	handler.mux.HandleFunc("/api/v1/search", handler.search)
+	handler.mux.HandleFunc("/api/v1/search-history/{historyID}", handler.searchHistoryItem)
+	handler.mux.HandleFunc("/api/v1/search-history", handler.searchHistory)
 	handler.mux.HandleFunc("/api/v1/files/open", handler.openFile)
 	handler.mux.HandleFunc("/api/v1/stats", handler.stats)
 	handler.mux.HandleFunc("/api/v1/stats/sync", handler.syncStats)
@@ -206,6 +216,109 @@ func (p SettingsPatch) Apply(settings *config.Settings) error {
 	return nil
 }
 
+type CreateShortcutRequest struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+}
+
+type UpdateShortcutRequest struct {
+	Title       *string `json:"title"`
+	URL         *string `json:"url"`
+	Description *string `json:"description"`
+}
+
+type shortcutsResponse struct {
+	Data []store.Shortcut `json:"data"`
+}
+
+func (h *Handler) shortcuts(w http.ResponseWriter, r *http.Request) {
+	if h.dependencies.Shortcuts == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "shortcut service is unavailable")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		sortBy := strings.TrimSpace(r.URL.Query().Get("sort"))
+		if sortBy == "" {
+			sortBy = "recent"
+		}
+		limit := 0
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed <= 0 {
+				writeError(w, http.StatusBadRequest, "invalid_request", "limit must be a positive integer")
+				return
+			}
+			limit = parsed
+		}
+		items, err := h.dependencies.Shortcuts.List(r.Context(), sortBy, limit)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, shortcutsResponse{Data: items})
+	case http.MethodPost:
+		var request CreateShortcutRequest
+		if !decodeJSON(w, r, &request) {
+			return
+		}
+		shortcut, err := h.dependencies.Shortcuts.Create(r.Context(), request.Title, request.URL, request.Description)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, shortcut)
+	default:
+		methodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (h *Handler) shortcut(w http.ResponseWriter, r *http.Request) {
+	if h.dependencies.Shortcuts == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "shortcut service is unavailable")
+		return
+	}
+	id := r.PathValue("shortcutID")
+	switch r.Method {
+	case http.MethodPatch:
+		var request UpdateShortcutRequest
+		if !decodeJSON(w, r, &request) {
+			return
+		}
+		shortcut, err := h.dependencies.Shortcuts.Update(r.Context(), id, request.Title, request.URL, request.Description)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, shortcut)
+	case http.MethodDelete:
+		if err := h.dependencies.Shortcuts.Delete(r.Context(), id); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		methodNotAllowed(w, http.MethodPatch, http.MethodDelete)
+	}
+}
+
+func (h *Handler) useShortcut(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if h.dependencies.Shortcuts == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "shortcut service is unavailable")
+		return
+	}
+	shortcut, err := h.dependencies.Shortcuts.Use(r.Context(), r.PathValue("shortcutID"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, shortcut)
+}
+
 type CreateRootRequest struct {
 	Name    string `json:"name"`
 	Path    string `json:"path"`
@@ -301,6 +414,19 @@ type SearchResponse struct {
 	Results []search.Result `json:"results"`
 }
 
+type searchHistoryResponse struct {
+	Data []store.SearchHistory `json:"data"`
+}
+
+type searchStreamEvent struct {
+	Type      string         `json:"type"`
+	Result    *search.Result `json:"result,omitempty"`
+	Count     int            `json:"count,omitempty"`
+	Truncated bool           `json:"truncated,omitempty"`
+	Code      string         `json:"code,omitempty"`
+	Message   string         `json:"message,omitempty"`
+}
+
 func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -348,7 +474,160 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	truncated := options.MaxResults > 0 && len(results) >= options.MaxResults
+	if err := h.recordSearchHistory(r.Context(), request, options, len(results), truncated); err != nil {
+		writeServiceError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, SearchResponse{RootID: request.RootID, Count: len(results), Results: results})
+}
+
+func (h *Handler) searchStream(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if h.dependencies.Search == nil || h.dependencies.Settings == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "search service is unavailable")
+		return
+	}
+	var request SearchRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	settings, err := h.dependencies.Settings.Get(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	options := search.Options{
+		Query: request.Query, Literal: settings.Search.Literal,
+		RespectGitignore: settings.Search.RespectGitignore,
+		IncludeBinary:    settings.Search.IncludeBinary,
+		MaxResults:       settings.Search.MaxResults, Timeout: settings.Search.Timeout,
+	}
+	if request.Literal != nil {
+		options.Literal = *request.Literal
+	}
+	if request.RespectGitignore != nil {
+		options.RespectGitignore = *request.RespectGitignore
+	}
+	if request.IncludeBinary != nil {
+		options.IncludeBinary = *request.IncludeBinary
+	}
+	if request.MaxResults != nil {
+		options.MaxResults = *request.MaxResults
+	}
+	if request.TimeoutMS != nil {
+		if *request.TimeoutMS <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "timeoutMs must be positive")
+			return
+		}
+		options.Timeout = time.Duration(*request.TimeoutMS) * time.Millisecond
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "stream_not_supported", "streaming responses are unavailable")
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+	encoder := json.NewEncoder(w)
+
+	streamResult, err := h.dependencies.Search.SearchStream(r.Context(), request.RootID, options, func(result search.Result) error {
+		if encodeErr := encoder.Encode(searchStreamEvent{Type: "result", Result: &result}); encodeErr != nil {
+			return encodeErr
+		}
+		flusher.Flush()
+		return nil
+	})
+	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
+		_, code, message := classifyError(err)
+		_ = encoder.Encode(searchStreamEvent{Type: "error", Code: code, Message: message})
+		flusher.Flush()
+		return
+	}
+	if err := h.recordSearchHistory(r.Context(), request, options, streamResult.Count, streamResult.Truncated); err != nil {
+		_, code, message := classifyError(err)
+		_ = encoder.Encode(searchStreamEvent{Type: "error", Code: code, Message: message})
+		flusher.Flush()
+		return
+	}
+	_ = encoder.Encode(searchStreamEvent{Type: "done", Count: streamResult.Count, Truncated: streamResult.Truncated})
+	flusher.Flush()
+}
+
+func (h *Handler) recordSearchHistory(ctx context.Context, request SearchRequest, options search.Options, resultCount int, truncated bool) error {
+	if h.dependencies.History == nil {
+		return nil
+	}
+	rootName := request.RootID
+	if h.dependencies.Roots != nil {
+		if root, err := h.dependencies.Roots.Get(ctx, request.RootID); err == nil && root.Name != "" {
+			rootName = root.Name
+		}
+	}
+	_, err := h.dependencies.History.Record(ctx, store.SearchHistory{
+		RootID: request.RootID, RootName: rootName, Query: request.Query,
+		Literal: options.Literal, RespectGitignore: options.RespectGitignore,
+		IncludeBinary: options.IncludeBinary, ResultCount: resultCount,
+		Truncated: truncated, Status: "completed",
+	})
+	return err
+}
+
+func (h *Handler) searchHistory(w http.ResponseWriter, r *http.Request) {
+	if h.dependencies.History == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "search history service is unavailable")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		limit := 50
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed <= 0 {
+				writeError(w, http.StatusBadRequest, "invalid_request", "limit must be a positive integer")
+				return
+			}
+			limit = parsed
+		}
+		history, err := h.dependencies.History.List(r.Context(), limit)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, searchHistoryResponse{Data: history})
+	case http.MethodDelete:
+		if err := h.dependencies.History.Clear(r.Context()); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		methodNotAllowed(w, http.MethodGet, http.MethodDelete)
+	}
+}
+
+func (h *Handler) searchHistoryItem(w http.ResponseWriter, r *http.Request) {
+	if h.dependencies.History == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "search history service is unavailable")
+		return
+	}
+	if !requireMethod(w, r, http.MethodDelete) {
+		return
+	}
+	if err := h.dependencies.History.Delete(r.Context(), r.PathValue("historyID")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type OpenFileRequest struct {
@@ -601,6 +880,10 @@ func classifyError(err error) (int, string, string) {
 	switch {
 	case errors.Is(err, search.ErrInvalidQuery), errors.Is(err, search.ErrInvalidRoot), errors.Is(err, search.ErrPathOutside), errors.Is(err, search.ErrSymlink):
 		return http.StatusBadRequest, "invalid_request", "request validation failed"
+	case errors.Is(err, shortcuts.ErrInvalidShortcut):
+		return http.StatusBadRequest, "invalid_shortcut", "shortcut validation failed"
+	case errors.Is(err, search.ErrInvalidHistory):
+		return http.StatusBadRequest, "invalid_history", "search history entry is invalid"
 	case errors.Is(err, search.ErrRootNotFound), errors.Is(err, store.ErrNotFound):
 		return http.StatusNotFound, "not_found", "resource not found"
 	case errors.Is(err, search.ErrRootDisabled):

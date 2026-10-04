@@ -388,10 +388,10 @@ type ModelUsage struct {
 func (c *Client) FetchStats(ctx context.Context, query StatsQuery) (UsageSnapshot, error) {
 	values := url.Values{}
 	if query.From != nil {
-		values.Set("from", query.From.UTC().Format(time.RFC3339))
+		values.Set("from", strconv.FormatInt(query.From.UTC().UnixMilli(), 10))
 	}
 	if query.To != nil {
-		values.Set("to", query.To.UTC().Format(time.RFC3339))
+		values.Set("to", strconv.FormatInt(query.To.UTC().UnixMilli(), 10))
 	}
 	if query.Project != "" {
 		values.Set("project", query.Project)

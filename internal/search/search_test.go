@@ -85,8 +85,70 @@ func TestSearchParsesMatchesAndHonorsLimit(t *testing.T) {
 	}
 }
 
+func TestSearchStreamEmitsMatchesBeforeRunnerCompletes(t *testing.T) {
+	rootPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rootPath, "first.go"), []byte("package first\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootPath, "second.go"), []byte("package second\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.OpenInMemory("search-stream-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	root, err := database.CreateSearchRoot(context.Background(), store.SearchRoot{Name: "root", Path: rootPath, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := streamRunnerFunc(func(_ context.Context, _ string, _ string, _ []string, onLine func([]byte) error) error {
+		for _, name := range []string{"first.go", "second.go"} {
+			event := map[string]any{
+				"type": "match",
+				"data": map[string]any{
+					"path":        map[string]string{"text": name},
+					"lines":       map[string]string{"text": "package main\n"},
+					"line_number": 1,
+					"submatches":  []map[string]int{{"start": 8}},
+				},
+			}
+			data, _ := json.Marshal(event)
+			if err := onLine(append(data, '\n')); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	service := NewService(database, runner, 10, time.Second)
+	results := make([]Result, 0, 2)
+	streamResult, err := service.SearchStream(context.Background(), root.ID, Options{Query: "package"}, func(result Result) error {
+		results = append(results, result)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if streamResult.Count != 2 || streamResult.Truncated || len(results) != 2 {
+		t.Fatalf("unexpected stream result: %+v results=%+v", streamResult, results)
+	}
+}
+
 type runnerFunc func(context.Context, string, string, []string) ([]byte, []byte, error)
 
 func (f runnerFunc) Run(ctx context.Context, dir, executable string, args []string) ([]byte, []byte, error) {
 	return f(ctx, dir, executable, args)
+}
+
+type streamRunnerFunc func(context.Context, string, string, []string, func([]byte) error) error
+
+func (f streamRunnerFunc) Run(ctx context.Context, dir, executable string, args []string) ([]byte, []byte, error) {
+	return nil, nil, f(ctx, dir, executable, args, func([]byte) error { return nil })
+}
+
+func (f streamRunnerFunc) RunStream(ctx context.Context, dir, executable string, args []string, onLine func([]byte) error) error {
+	return f(ctx, dir, executable, args, onLine)
 }

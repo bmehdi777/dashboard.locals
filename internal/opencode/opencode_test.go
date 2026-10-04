@@ -36,6 +36,10 @@ func TestDetectorAndStatsClient(t *testing.T) {
 		case "/api/info":
 			_, _ = w.Write([]byte(`{"version":"1.2.3","pid":1,"urls":[],"paths":{"tmp":"/tmp"}}`))
 		case "/api/experimental/session/stats":
+			if r.URL.Query().Get("from") != "1700000000000" || r.URL.Query().Get("to") != "1700003600000" {
+				http.Error(w, "from and to must be Unix milliseconds", http.StatusBadRequest)
+				return
+			}
 			_, _ = w.Write([]byte(`{"data":{"range":{"from":1700000000000,"to":1700003600000},"sessions":2,"subagents":1,"prompts":3,"steps":4,"tokens":{"input":10,"output":20,"reasoning":5,"cache":{"read":6,"write":7}},"cost":0.12,"tools":{"mode":"summary","totals":{"calls":1,"succeeded":1,"failed":0,"unfinished":0}},"activeDays":1,"streak":1,"activity":[],"models":[]}}`))
 		default:
 			http.NotFound(w, r)

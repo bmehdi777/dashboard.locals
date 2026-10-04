@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { healthApi, searchRootsApi, settingsApi, statsApi } from '../../api'
-import type { SearchRoot, SearchRootInput, SettingsPatch, StatsFilters } from '../../api'
+import { healthApi, historyApi, searchRootsApi, settingsApi, shortcutsApi, statsApi } from '../../api'
+import type { SearchHistoryEntry, SearchRoot, SearchRootInput, SettingsPatch, Shortcut, ShortcutInput, ShortcutSort, StatsFilters } from '../../api'
 
 export const queryKeys = {
   health: ['health'] as const,
   settings: ['settings'] as const,
   roots: ['search-roots'] as const,
+  history: ['search-history'] as const,
+  shortcuts: ['shortcuts'] as const,
   stats: (filters: StatsFilters) => ['stats', filters] as const,
 }
 
@@ -44,6 +46,92 @@ export function useStatsQuery(filters: StatsFilters, enabled = true) {
     enabled,
     retry: false,
     staleTime: 60_000,
+  })
+}
+
+export function useShortcutsQuery(sort: ShortcutSort = 'recent', limit?: number) {
+  return useQuery({
+    queryKey: [...queryKeys.shortcuts, sort, limit] as const,
+    queryFn: () => shortcutsApi.list(sort, limit),
+    retry: false,
+    staleTime: 30_000,
+  })
+}
+
+export function useCreateShortcutMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (shortcut: ShortcutInput) => shortcutsApi.create(shortcut),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shortcuts })
+    },
+  })
+}
+
+export function useUpdateShortcutMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, shortcut }: { id: string; shortcut: Partial<ShortcutInput> }) =>
+      shortcutsApi.update(id, shortcut),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shortcuts })
+    },
+  })
+}
+
+export function useDeleteShortcutMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => shortcutsApi.remove(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shortcuts })
+    },
+  })
+}
+
+export function useRecordShortcutUseMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => shortcutsApi.use(id),
+    onSuccess: (shortcut) => {
+      queryClient.setQueriesData<Shortcut[]>({ queryKey: queryKeys.shortcuts }, (current) =>
+        current?.map((item) => (item.id === shortcut.id ? shortcut : item)),
+      )
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shortcuts })
+    },
+  })
+}
+
+export function useSearchHistoryQuery() {
+  return useQuery({
+    queryKey: queryKeys.history,
+    queryFn: () => historyApi.list(50),
+    retry: false,
+    staleTime: 30_000,
+  })
+}
+
+export function useDeleteSearchHistoryMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => historyApi.remove(id),
+    onSuccess: (_result, id) => {
+      queryClient.setQueryData<SearchHistoryEntry[]>(queryKeys.history, (current) =>
+        current?.filter((entry) => entry.id !== id),
+      )
+      void queryClient.invalidateQueries({ queryKey: queryKeys.history })
+    },
+  })
+}
+
+export function useClearSearchHistoryMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: historyApi.clear,
+    onSuccess: () => {
+      queryClient.setQueryData<SearchHistoryEntry[]>(queryKeys.history, [])
+      void queryClient.invalidateQueries({ queryKey: queryKeys.history })
+    },
   })
 }
 

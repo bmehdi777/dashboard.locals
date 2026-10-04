@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { historyApi } from './history'
 import { searchApi } from './search'
 import { settingsApi } from './settings'
 import { statsApi } from './stats'
@@ -121,5 +122,46 @@ describe('searchApi', () => {
       to: '2026-01-03T23:59:59Z',
       tools: 'summary',
     })
+  })
+
+  it('consomme les résultats de recherche au fil du flux NDJSON', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        [
+          JSON.stringify({ type: 'result', result: { path: 'first.go', line: 1, column: 1, excerpt: 'first' } }),
+          JSON.stringify({ type: 'result', result: { path: 'second.go', line: 2, column: 3, excerpt: 'second' } }),
+          JSON.stringify({ type: 'done', count: 2, truncated: false }),
+        ].join('\n') + '\n',
+        { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const events: Array<{ type: string }> = []
+
+    await searchApi.stream(
+      { rootId: 'root-1', query: 'needle', respectGitignore: true, ignoreBinary: true },
+      undefined,
+      (event) => events.push(event),
+    )
+
+    expect(events).toHaveLength(3)
+    expect(events[0]).toMatchObject({ type: 'result', result: { path: 'first.go', snippet: 'first' } })
+    expect(events[2]).toMatchObject({ type: 'done', count: 2 })
+  })
+
+  it('charge l’historique depuis l’enveloppe serveur', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{
+        id: 'history-1', rootId: 'root-1', rootName: 'Projet', query: 'needle',
+        literal: true, respectGitignore: true, includeBinary: false,
+        resultCount: 3, truncated: false, status: 'completed', createdAt: '2026-01-01T12:00:00Z',
+      }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const history = await historyApi.list()
+
+    expect(history).toHaveLength(1)
+    expect(history[0]).toMatchObject({ id: 'history-1', query: 'needle', resultCount: 3 })
   })
 })

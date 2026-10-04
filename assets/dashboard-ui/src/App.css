@@ -6,6 +6,11 @@
   display: grid;
   grid-template-columns: 258px minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 180ms ease;
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
 .sidebar {
@@ -14,10 +19,13 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  min-width: 0;
+  overflow: hidden;
   padding: 24px 16px 18px;
   background: #101116;
   border-right: 1px solid var(--border);
   z-index: 20;
+  transition: padding 180ms ease, border-color 180ms ease;
 }
 
 .sidebar-brand {
@@ -118,9 +126,21 @@
 }
 
 .mobile-close,
-.mobile-menu,
 .sidebar-overlay {
   display: none;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-right: 10px;
+}
+
+@media (min-width: 801px) {
+  .app-shell.sidebar-collapsed .sidebar {
+    visibility: hidden;
+    pointer-events: none;
+  }
 }
 
 .app-main {
@@ -347,6 +367,161 @@
   display: flex;
   align-items: center;
   padding: 0 22px 22px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.section-heading h2 {
+  color: var(--text-strong);
+  font-size: 20px;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+}
+
+.section-heading p:not(.eyebrow) {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.home-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+}
+
+.shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  gap: 14px;
+}
+
+.shortcut-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  background: linear-gradient(145deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.shortcut-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.shortcut-card-link {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding: 18px 18px 15px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.shortcut-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.shortcut-card-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
+
+.shortcut-card-open {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: var(--muted);
+  border-radius: 7px;
+}
+
+.shortcut-card:hover .shortcut-card-open {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.shortcut-card-title {
+  display: block;
+  margin-top: 16px;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-card-description {
+  display: -webkit-box;
+  min-height: 34px;
+  margin-top: 7px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.shortcut-card-url {
+  display: block;
+  margin-top: auto;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 12px 0 18px;
+  color: var(--muted);
+  font-size: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.shortcut-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.shortcut-form-card .alert {
+  margin-bottom: 18px;
+}
+
+.shortcut-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shortcut-form .form-actions {
+  justify-content: flex-end;
 }
 
 .dashboard-hero {
@@ -770,6 +945,72 @@
   padding-top: 0;
 }
 
+.history-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(170px, 0.8fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-main {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.history-query {
+  overflow: hidden;
+  color: var(--accent-strong);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-root,
+.history-meta {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.history-root {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-limited {
+  color: var(--warning);
+}
+
+.history-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
 .muted-text {
   color: var(--muted);
   font-size: 11px;
@@ -919,6 +1160,26 @@
   min-height: 100px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.stream-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 14px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid rgba(155, 124, 255, 0.25);
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.stream-progress strong {
+  margin-left: auto;
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .spin {
@@ -1263,8 +1524,7 @@
     z-index: 19;
   }
 
-  .mobile-close,
-  .mobile-menu {
+  .mobile-close {
     display: inline-flex;
   }
 
@@ -1288,10 +1548,6 @@
 
   .topbar {
     padding: 0 18px;
-  }
-
-  .mobile-menu {
-    margin-right: 10px;
   }
 
   .topbar-context {
@@ -1346,6 +1602,15 @@
     display: block;
   }
 
+  .section-heading {
+    display: block;
+  }
+
+  .section-heading .button {
+    width: 100%;
+    margin-top: 15px;
+  }
+
   .page-actions {
     margin-top: 18px;
   }
@@ -1379,6 +1644,18 @@
 
   .result-item {
     display: block;
+  }
+
+  .history-row {
+    display: block;
+  }
+
+  .history-meta {
+    margin-top: 8px;
+  }
+
+  .history-actions {
+    margin-top: 10px;
   }
 
   .result-actions {

@@ -188,11 +188,15 @@ func (s *Service) Sync(ctx context.Context, query Query) (SyncResult, error) {
 		if fetchErr != nil {
 			return SyncResult{Source: source, Status: "error", Detection: detection}, fetchErr
 		}
+		// OpenCode reports the current instant as range.to for an in-progress
+		// period. Persist the requested calendar bucket instead, otherwise every
+		// synchronization creates a new aggregate for the same day or month.
+		snapshot.Range = opencode.StatsRange{From: period.From, To: period.To}
 		contentHash := sha256.Sum256(snapshot.Payload)
 		records = append(records, record{
 			raw: store.RawStatRecord{
 				Source: source, Project: normalized.Project,
-				PeriodStart: snapshot.Range.From, PeriodEnd: snapshot.Range.To,
+				PeriodStart: period.From, PeriodEnd: period.To,
 				Granularity: "raw", FormatVersion: opencode.FormatVersion,
 				ContentHash: hex.EncodeToString(contentHash[:]), Payload: snapshot.Payload,
 				FetchedAt: time.Now().UTC(),
@@ -250,7 +254,7 @@ func splitPeriods(from, to time.Time, granularity, timezone string) ([]period, e
 	localFrom := from.In(location)
 	localTo := to.In(location)
 	periods := make([]period, 0)
-	current := localFrom
+	current := time.Date(localFrom.Year(), localFrom.Month(), localFrom.Day(), 0, 0, 0, 0, location)
 	for current.Before(localTo) {
 		var next time.Time
 		switch granularity {
@@ -264,11 +268,7 @@ func splitPeriods(from, to time.Time, granularity, timezone string) ([]period, e
 		if !next.After(current) {
 			return nil, errors.New("could not advance statistics period")
 		}
-		periodTo := next
-		if periodTo.After(localTo) {
-			periodTo = localTo
-		}
-		periods = append(periods, period{From: current.UTC(), To: periodTo.UTC()})
+		periods = append(periods, period{From: current.UTC(), To: next.UTC()})
 		current = next
 	}
 	return periods, nil
@@ -298,6 +298,7 @@ func (s *Service) Compact(ctx context.Context, request CompactRequest) (CompactR
 			if err != nil {
 				return fmt.Errorf("decode raw statistics: %w", err)
 			}
+			snapshot.Range = opencode.StatsRange{From: raw.PeriodStart, To: raw.PeriodEnd}
 			aggregate := aggregateFromSnapshot(snapshot, raw.Project, request.Granularity)
 			key := compactAggregateKey(aggregate)
 			if previous, ok := groups[key]; ok {

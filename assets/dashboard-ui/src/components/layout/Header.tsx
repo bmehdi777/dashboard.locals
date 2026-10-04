@@ -4,7 +4,13 @@ import { useHealthQuery, queryKeys } from '../../features/shared/hooks'
 import { HealthBadge, OpenCodeBadge } from '../feedback/StatusBadge'
 import { Button } from '../ui/Button'
 
-export function Header({ onMenu }: { onMenu: () => void }) {
+interface HeaderProps {
+  onMenu: () => void
+  sidebarExpanded: boolean
+  menuLabel: string
+}
+
+export function Header({ onMenu, sidebarExpanded, menuLabel }: HeaderProps) {
   const queryClient = useQueryClient()
   const health = useHealthQuery()
   const isRefreshing = health.isFetching
@@ -17,7 +23,16 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 
   return (
     <header className="topbar">
-      <Button className="mobile-menu" variant="ghost" size="icon" onClick={onMenu} aria-label="Ouvrir le menu">
+      <Button
+        className="sidebar-toggle"
+        variant="ghost"
+        size="icon"
+        onClick={onMenu}
+        aria-label={menuLabel}
+        aria-expanded={sidebarExpanded}
+        aria-controls="primary-sidebar"
+        title={menuLabel}
+      >
         <Menu size={20} aria-hidden="true" />
       </Button>
       <div className="topbar-context">

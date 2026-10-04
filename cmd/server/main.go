@@ -17,6 +17,7 @@ import (
 	"dashboard.locals/internal/launcher"
 	"dashboard.locals/internal/opencode"
 	"dashboard.locals/internal/search"
+	"dashboard.locals/internal/shortcuts"
 	"dashboard.locals/internal/stats"
 	"dashboard.locals/internal/store"
 )
@@ -63,6 +64,8 @@ func run(logger *log.Logger) error {
 	}
 
 	rootService := search.NewRootService(database)
+	historyService := search.NewHistoryService(database)
+	shortcutService := shortcuts.NewService(database)
 	searchService := search.NewService(database, nil, settings.Search.MaxResults, minDuration(settings.Search.Timeout, runtimeConfig.SearchTimeout))
 	launcherService := launcher.NewService(database, nil)
 
@@ -77,13 +80,15 @@ func run(logger *log.Logger) error {
 
 	handler := httpserver.NewHandler(httpserver.Config{
 		API: v1.Dependencies{
-			Settings: settingsService,
-			Roots:    rootService,
-			Search:   searchService,
-			Launcher: launcherService,
-			Stats:    statsService,
-			OpenCode: detector,
-			Version:  version,
+			Settings:  settingsService,
+			Roots:     rootService,
+			Search:    searchService,
+			History:   historyService,
+			Shortcuts: shortcutService,
+			Launcher:  launcherService,
+			Stats:     statsService,
+			OpenCode:  detector,
+			Version:   version,
 		},
 		Logger: logger,
 	})

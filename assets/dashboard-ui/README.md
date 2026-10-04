@@ -17,6 +17,7 @@ pas directement OpenCode, `ripgrep` ou un éditeur.
 - vue d’ensemble de l’état du serveur et de l’usage IA ;
 - recherche dans une racine configurée avec options `.gitignore` et fichiers
   binaires ;
+- historique serveur des recherches terminées, avec reprise et suppression ;
 - copie d’un chemin de résultat et demande d’ouverture via l’API serveur ;
 - statistiques quotidiennes, modèles, outils, tokens et coûts ;
 - synchronisation des statistiques ;

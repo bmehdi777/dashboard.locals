@@ -8,6 +8,8 @@ import type {
   SearchResponse,
   SearchResult,
   SearchRoot,
+  Shortcut,
+  SearchStreamEvent,
   Settings,
   StatsResponse,
   StatsSummary,
@@ -85,6 +87,30 @@ export function normalizeRoots(value: unknown): SearchRoot[] {
         name: readString(item.name) ?? (path || 'Racine sans nom'),
         path,
         enabled: readBoolean(item.enabled, true),
+        createdAt: readString(item.createdAt ?? item.created_at),
+        updatedAt: readString(item.updatedAt ?? item.updated_at),
+      },
+    ]
+  })
+}
+
+export function normalizeShortcuts(value: unknown): Shortcut[] {
+  const source = unwrap(value)
+  const shortcuts = isRecord(source) ? source.shortcuts : source
+
+  return readArray(shortcuts).flatMap((item, index) => {
+    if (!isRecord(item)) return []
+    const id = readString(item.id) ?? `shortcut-${index}`
+    const url = readString(item.url) ?? ''
+    if (!url) return []
+    return [
+      {
+        id,
+        title: readString(item.title ?? item.name) ?? 'Raccourci sans nom',
+        url,
+        description: readString(item.description) ?? '',
+        usageCount: asNumber(item.usageCount ?? item.usage_count),
+        lastUsedAt: readString(item.lastUsedAt ?? item.last_used_at),
         createdAt: readString(item.createdAt ?? item.created_at),
         updatedAt: readString(item.updatedAt ?? item.updated_at),
       },
@@ -179,6 +205,25 @@ export function normalizeSearch(value: unknown): SearchResponse {
     truncated: Boolean(record.truncated ?? record.limited),
     durationMs: asNumber(record.durationMs ?? record.duration_ms, 0),
   }
+}
+
+export function normalizeSearchStreamEvent(
+  value: unknown,
+  index: number,
+): SearchStreamEvent | undefined {
+  if (!isRecord(value)) return undefined
+  if (value.type === 'result') {
+    const result = normalizeSearchResult(value.result, index)
+    return result ? { type: 'result', result } : undefined
+  }
+  if (value.type === 'done') {
+    return {
+      type: 'done',
+      count: asNumber(value.count),
+      truncated: value.truncated === true,
+    }
+  }
+  return undefined
 }
 
 export function normalizeOpenFile(value: unknown): OpenFileResponse {

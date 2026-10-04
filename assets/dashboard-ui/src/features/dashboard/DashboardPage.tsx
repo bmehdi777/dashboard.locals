@@ -1,4 +1,4 @@
-import { ArrowRight, BarChart3, BrainCircuit, FolderSearch, Search, Settings2, Sparkles, Workflow } from 'lucide-react'
+import { ArrowRight, BarChart3, BrainCircuit, FolderSearch, Link2, Search, Settings2, Sparkles, Workflow } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ActivityChart } from '../../components/stats/ActivityChart'
 import { ModelBreakdown } from '../../components/stats/BreakdownList'
@@ -10,12 +10,14 @@ import { PageHeader } from '../../components/layout/PageHeader'
 import { OpenCodeBadge } from '../../components/feedback/StatusBadge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/Card'
 import { formatCost, formatNumber } from '../../lib/formatters'
-import { useHealthQuery, useRootsQuery, useStatsQuery } from '../shared/hooks'
+import { useHealthQuery, useRootsQuery, useShortcutsQuery, useStatsQuery } from '../shared/hooks'
 import { DEFAULT_STATS_FILTERS } from '../stats/defaults'
+import { ShortcutGrid } from '../shortcuts/ShortcutCard'
 
 export function DashboardPage() {
   const healthQuery = useHealthQuery()
   const rootsQuery = useRootsQuery()
+  const shortcutsQuery = useShortcutsQuery('popular', 5)
   const statsQuery = useStatsQuery(DEFAULT_STATS_FILTERS)
   const summary = statsQuery.data?.summary
   const opencode = healthQuery.data?.opencode ?? healthQuery.data?.openCode
@@ -28,6 +30,21 @@ export function DashboardPage() {
         description="Votre espace local pour explorer le code et comprendre votre usage IA."
         actions={<Link to="/search" className="button button-default button-md"><Search size={16} aria-hidden="true" /> Nouvelle recherche</Link>}
       />
+
+      <section className="home-shortcuts" aria-labelledby="home-shortcuts-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Accès rapides</p>
+            <h2 id="home-shortcuts-title">Raccourcis les plus utilisés</h2>
+            <p>Retrouvez en un clic les liens que vous consultez le plus souvent.</p>
+          </div>
+          <Link to="/shortcuts" className="button button-outline button-sm">Gérer les raccourcis <ArrowRight size={15} aria-hidden="true" /></Link>
+        </div>
+        {shortcutsQuery.isLoading ? <LoadingState label="Chargement des raccourcis…" /> : null}
+        {shortcutsQuery.isError ? <ErrorState error={shortcutsQuery.error} onRetry={() => void shortcutsQuery.refetch()} title="Les raccourcis sont indisponibles" /> : null}
+        {!shortcutsQuery.isLoading && !shortcutsQuery.isError && shortcutsQuery.data?.length ? <ShortcutGrid shortcuts={shortcutsQuery.data} className="shortcut-grid-home" /> : null}
+        {!shortcutsQuery.isLoading && !shortcutsQuery.isError && !shortcutsQuery.data?.length ? <Card><CardContent><EmptyState icon={<Link2 size={22} aria-hidden="true" />} title="Aucun raccourci pour le moment" description="Ajoutez vos liens favoris pour les retrouver ici dès l’accueil." action={<Link to="/shortcuts" className="button button-outline button-sm">Ajouter un raccourci</Link>} /></CardContent></Card> : null}
+      </section>
 
       <section className="dashboard-hero">
         <div className="hero-copy">

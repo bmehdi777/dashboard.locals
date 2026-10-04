@@ -19,6 +19,10 @@ const StatsPage = lazy(async () => {
   const module = await import('./features/stats/StatsPage')
   return { default: module.StatsPage }
 })
+const ShortcutsPage = lazy(async () => {
+  const module = await import('./features/shortcuts/ShortcutsPage')
+  return { default: module.ShortcutsPage }
+})
 
 function NotFoundPage() {
   return (
@@ -39,6 +43,7 @@ function AppRoutes() {
           <Route index element={<DashboardPage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="stats" element={<StatsPage />} />
+          <Route path="shortcuts" element={<ShortcutsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />

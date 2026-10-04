@@ -20,7 +20,7 @@ var (
 	ErrConflict = errors.New("storage conflict")
 )
 
-const currentSchemaVersion = 2
+const currentSchemaVersion = 5
 
 type Store struct {
 	db *gorm.DB
@@ -50,15 +50,26 @@ type settingModel struct {
 	UpdatedAt time.Time `gorm:"not null"`
 }
 
+type shortcutModel struct {
+	ID          string     `gorm:"primaryKey;size:32"`
+	Title       string     `gorm:"not null;size:200"`
+	URL         string     `gorm:"not null;size:2048"`
+	Description string     `gorm:"type:text;not null"`
+	UsageCount  int64      `gorm:"not null;default:0;index"`
+	LastUsedAt  *time.Time `gorm:"index"`
+	CreatedAt   time.Time  `gorm:"not null"`
+	UpdatedAt   time.Time  `gorm:"not null"`
+}
+
 type rawStatModel struct {
 	ID            string    `gorm:"primaryKey;size:32"`
 	Source        string    `gorm:"not null;size:100;uniqueIndex:idx_raw_identity"`
 	Project       string    `gorm:"not null;size:4096;uniqueIndex:idx_raw_identity"`
 	PeriodStart   time.Time `gorm:"not null;uniqueIndex:idx_raw_identity"`
-	PeriodEnd     time.Time `gorm:"not null;uniqueIndex:idx_raw_identity"`
+	PeriodEnd     time.Time `gorm:"not null"`
 	Granularity   string    `gorm:"not null;size:20;uniqueIndex:idx_raw_identity"`
 	FormatVersion int       `gorm:"not null;uniqueIndex:idx_raw_identity"`
-	ContentHash   string    `gorm:"not null;size:64;uniqueIndex:idx_raw_identity"`
+	ContentHash   string    `gorm:"not null;size:64"`
 	Payload       string    `gorm:"type:text;not null"`
 	FetchedAt     time.Time `gorm:"not null;index"`
 	CreatedAt     time.Time `gorm:"not null"`
@@ -69,7 +80,7 @@ type aggregateModel struct {
 	Source        string    `gorm:"not null;size:100;uniqueIndex:idx_aggregate_identity"`
 	Project       string    `gorm:"not null;size:4096;uniqueIndex:idx_aggregate_identity"`
 	PeriodStart   time.Time `gorm:"not null;uniqueIndex:idx_aggregate_identity"`
-	PeriodEnd     time.Time `gorm:"not null;uniqueIndex:idx_aggregate_identity"`
+	PeriodEnd     time.Time `gorm:"not null"`
 	Granularity   string    `gorm:"not null;size:20;uniqueIndex:idx_aggregate_identity"`
 	FormatVersion int       `gorm:"not null;uniqueIndex:idx_aggregate_identity"`
 	Sessions      int64     `gorm:"not null"`
@@ -101,6 +112,20 @@ type syncMetadataModel struct {
 	UpdatedAt  time.Time `gorm:"not null"`
 }
 
+type searchHistoryModel struct {
+	ID               string    `gorm:"primaryKey;size:32"`
+	RootID           string    `gorm:"not null;index;size:32"`
+	RootName         string    `gorm:"not null;size:200"`
+	Query            string    `gorm:"not null;size:4096"`
+	Literal          bool      `gorm:"not null"`
+	RespectGitignore bool      `gorm:"not null"`
+	IncludeBinary    bool      `gorm:"not null"`
+	ResultCount      int       `gorm:"not null"`
+	Truncated        bool      `gorm:"not null"`
+	Status           string    `gorm:"not null;size:20;index"`
+	CreatedAt        time.Time `gorm:"not null;index"`
+}
+
 type SearchRoot struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
@@ -108,6 +133,17 @@ type SearchRoot struct {
 	Enabled   bool      `json:"enabled"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type Shortcut struct {
+	ID          string     `json:"id"`
+	Title       string     `json:"title"`
+	URL         string     `json:"url"`
+	Description string     `json:"description"`
+	UsageCount  int64      `json:"usageCount"`
+	LastUsedAt  *time.Time `json:"lastUsedAt,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
 type RawStatRecord struct {
@@ -159,6 +195,20 @@ type SyncMetadata struct {
 	LastTo     *time.Time
 	LastError  string
 	UpdatedAt  time.Time
+}
+
+type SearchHistory struct {
+	ID               string    `json:"id"`
+	RootID           string    `json:"rootId"`
+	RootName         string    `json:"rootName"`
+	Query            string    `json:"query"`
+	Literal          bool      `json:"literal"`
+	RespectGitignore bool      `json:"respectGitignore"`
+	IncludeBinary    bool      `json:"includeBinary"`
+	ResultCount      int       `json:"resultCount"`
+	Truncated        bool      `json:"truncated"`
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 func Open(path string) (*Store, error) {
@@ -248,6 +298,18 @@ func (s *Store) Migrate(ctx context.Context) error {
 				if err := tx.AutoMigrate(&aggregateModel{}); err != nil {
 					return fmt.Errorf("migrate aggregate schema: %w", err)
 				}
+			case 3:
+				if err := tx.AutoMigrate(&searchHistoryModel{}); err != nil {
+					return fmt.Errorf("migrate search history schema: %w", err)
+				}
+			case 4:
+				if err := migrateIdempotentStatistics(tx); err != nil {
+					return fmt.Errorf("migrate idempotent statistics schema: %w", err)
+				}
+			case 5:
+				if err := tx.AutoMigrate(&shortcutModel{}); err != nil {
+					return fmt.Errorf("migrate shortcuts schema: %w", err)
+				}
 			}
 			if err := tx.Create(&migrationModel{Version: version, AppliedAt: time.Now().UTC()}).Error; err != nil {
 				return fmt.Errorf("record schema version: %w", err)
@@ -255,6 +317,62 @@ func (s *Store) Migrate(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+// migrateIdempotentStatistics repairs the identity indexes introduced by the
+// initial statistics implementation. That implementation included the
+// response end time and payload hash in the identity, although OpenCode
+// legitimately changes both values for the same in-progress calendar period.
+// Keep the most recently fetched row for each logical period before creating
+// the new indexes, so existing dashboards do not keep displaying duplicates.
+func migrateIdempotentStatistics(tx *gorm.DB) error {
+	if err := tx.Exec("DROP INDEX IF EXISTS idx_raw_identity").Error; err != nil {
+		return err
+	}
+	if err := tx.Exec("DROP INDEX IF EXISTS idx_aggregate_identity").Error; err != nil {
+		return err
+	}
+
+	var rawRows []rawStatModel
+	if err := tx.Order("source ASC, project ASC, period_start ASC, granularity ASC, format_version ASC, fetched_at DESC, created_at DESC, id DESC").Find(&rawRows).Error; err != nil {
+		return err
+	}
+	seenRaw := make(map[string]struct{}, len(rawRows))
+	for _, row := range rawRows {
+		key := statisticsIdentity(row.Source, row.Project, row.PeriodStart, row.Granularity, row.FormatVersion)
+		if _, exists := seenRaw[key]; exists {
+			if err := tx.Delete(&rawStatModel{}, "id = ?", row.ID).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		seenRaw[key] = struct{}{}
+	}
+
+	var aggregateRows []aggregateModel
+	if err := tx.Order("source ASC, project ASC, period_start ASC, granularity ASC, format_version ASC, updated_at DESC, created_at DESC, id DESC").Find(&aggregateRows).Error; err != nil {
+		return err
+	}
+	seenAggregates := make(map[string]struct{}, len(aggregateRows))
+	for _, row := range aggregateRows {
+		key := statisticsIdentity(row.Source, row.Project, row.PeriodStart, row.Granularity, row.FormatVersion)
+		if _, exists := seenAggregates[key]; exists {
+			if err := tx.Delete(&aggregateModel{}, "id = ?", row.ID).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		seenAggregates[key] = struct{}{}
+	}
+
+	if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_identity ON raw_stat_models (source, project, period_start, granularity, format_version)").Error; err != nil {
+		return err
+	}
+	return tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_aggregate_identity ON aggregate_models (source, project, period_start, granularity, format_version)").Error
+}
+
+func statisticsIdentity(source, project string, periodStart time.Time, granularity string, formatVersion int) string {
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d", source, project, periodStart.UTC().Format(time.RFC3339Nano), granularity, formatVersion)
 }
 
 func newID() string {
@@ -379,10 +497,190 @@ func (s *Store) DeleteSearchRoot(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *Store) CreateSearchHistory(ctx context.Context, history SearchHistory) (SearchHistory, error) {
+	if history.ID == "" {
+		history.ID = newID()
+	}
+	if history.CreatedAt.IsZero() {
+		history.CreatedAt = time.Now().UTC()
+	}
+	model := searchHistoryModel{
+		ID: history.ID, RootID: history.RootID, RootName: history.RootName,
+		Query: history.Query, Literal: history.Literal,
+		RespectGitignore: history.RespectGitignore, IncludeBinary: history.IncludeBinary,
+		ResultCount: history.ResultCount, Truncated: history.Truncated,
+		Status: history.Status, CreatedAt: history.CreatedAt,
+	}
+	if err := s.db.WithContext(ctx).Create(&model).Error; err != nil {
+		return SearchHistory{}, fmt.Errorf("create search history: %w", err)
+	}
+	return toSearchHistory(model), nil
+}
+
+func (s *Store) ListSearchHistory(ctx context.Context, limit int) ([]SearchHistory, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	var models []searchHistoryModel
+	if err := s.db.WithContext(ctx).Order("created_at DESC").Limit(limit).Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list search history: %w", err)
+	}
+	result := make([]SearchHistory, 0, len(models))
+	for _, model := range models {
+		result = append(result, toSearchHistory(model))
+	}
+	return result, nil
+}
+
+func (s *Store) DeleteSearchHistory(ctx context.Context, id string) error {
+	result := s.db.WithContext(ctx).Delete(&searchHistoryModel{}, "id = ?", id)
+	if result.Error != nil {
+		return fmt.Errorf("delete search history: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (s *Store) ClearSearchHistory(ctx context.Context) error {
+	return s.db.WithContext(ctx).Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&searchHistoryModel{}).Error
+}
+
+func toSearchHistory(model searchHistoryModel) SearchHistory {
+	return SearchHistory{
+		ID: model.ID, RootID: model.RootID, RootName: model.RootName,
+		Query: model.Query, Literal: model.Literal,
+		RespectGitignore: model.RespectGitignore, IncludeBinary: model.IncludeBinary,
+		ResultCount: model.ResultCount, Truncated: model.Truncated,
+		Status: model.Status, CreatedAt: model.CreatedAt,
+	}
+}
+
 func toSearchRoot(model searchRootModel) SearchRoot {
 	return SearchRoot{
 		ID: model.ID, Name: model.Name, Path: model.Path, Enabled: model.Enabled,
 		CreatedAt: model.CreatedAt, UpdatedAt: model.UpdatedAt,
+	}
+}
+
+func (s *Store) ListShortcuts(ctx context.Context, sortBy string, limit int) ([]Shortcut, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	query := s.db.WithContext(ctx).Model(&shortcutModel{})
+	switch sortBy {
+	case "popular":
+		query = query.Order("usage_count DESC").Order("CASE WHEN last_used_at IS NULL THEN 1 ELSE 0 END ASC").Order("last_used_at DESC").Order("title ASC")
+	default:
+		query = query.Order("created_at DESC").Order("title ASC")
+	}
+
+	var models []shortcutModel
+	if err := query.Limit(limit).Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list shortcuts: %w", err)
+	}
+	result := make([]Shortcut, 0, len(models))
+	for _, model := range models {
+		result = append(result, toShortcut(model))
+	}
+	return result, nil
+}
+
+func (s *Store) GetShortcut(ctx context.Context, id string) (Shortcut, error) {
+	var model shortcutModel
+	if err := s.db.WithContext(ctx).First(&model, "id = ?", id).Error; err != nil {
+		return Shortcut{}, err
+	}
+	return toShortcut(model), nil
+}
+
+func (s *Store) CreateShortcut(ctx context.Context, shortcut Shortcut) (Shortcut, error) {
+	if shortcut.ID == "" {
+		shortcut.ID = newID()
+	}
+	now := time.Now().UTC()
+	if shortcut.CreatedAt.IsZero() {
+		shortcut.CreatedAt = now
+	}
+	if shortcut.UpdatedAt.IsZero() {
+		shortcut.UpdatedAt = now
+	}
+	model := shortcutModel{
+		ID: shortcut.ID, Title: shortcut.Title, URL: shortcut.URL,
+		Description: shortcut.Description, UsageCount: shortcut.UsageCount,
+		LastUsedAt: shortcut.LastUsedAt, CreatedAt: shortcut.CreatedAt,
+		UpdatedAt: shortcut.UpdatedAt,
+	}
+	if err := s.db.WithContext(ctx).Create(&model).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return Shortcut{}, fmt.Errorf("%w: shortcut already exists", ErrConflict)
+		}
+		return Shortcut{}, fmt.Errorf("create shortcut: %w", err)
+	}
+	return toShortcut(model), nil
+}
+
+func (s *Store) UpdateShortcut(ctx context.Context, shortcut Shortcut) (Shortcut, error) {
+	if shortcut.ID == "" {
+		return Shortcut{}, errors.New("shortcut id is empty")
+	}
+	shortcut.UpdatedAt = time.Now().UTC()
+	result := s.db.WithContext(ctx).Model(&shortcutModel{}).Where("id = ?", shortcut.ID).Updates(map[string]any{
+		"title":       shortcut.Title,
+		"url":         shortcut.URL,
+		"description": shortcut.Description,
+		"updated_at":  shortcut.UpdatedAt,
+	})
+	if result.Error != nil {
+		return Shortcut{}, fmt.Errorf("update shortcut: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return Shortcut{}, gorm.ErrRecordNotFound
+	}
+	return s.GetShortcut(ctx, shortcut.ID)
+}
+
+func (s *Store) DeleteShortcut(ctx context.Context, id string) error {
+	result := s.db.WithContext(ctx).Delete(&shortcutModel{}, "id = ?", id)
+	if result.Error != nil {
+		return fmt.Errorf("delete shortcut: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (s *Store) RecordShortcutUse(ctx context.Context, id string) (Shortcut, error) {
+	now := time.Now().UTC()
+	result := s.db.WithContext(ctx).Model(&shortcutModel{}).Where("id = ?", id).Updates(map[string]any{
+		"usage_count":  gorm.Expr("usage_count + ?", 1),
+		"last_used_at": now,
+		"updated_at":   now,
+	})
+	if result.Error != nil {
+		return Shortcut{}, fmt.Errorf("record shortcut use: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return Shortcut{}, gorm.ErrRecordNotFound
+	}
+	return s.GetShortcut(ctx, id)
+}
+
+func toShortcut(model shortcutModel) Shortcut {
+	return Shortcut{
+		ID: model.ID, Title: model.Title, URL: model.URL,
+		Description: model.Description, UsageCount: model.UsageCount,
+		LastUsedAt: model.LastUsedAt, CreatedAt: model.CreatedAt,
+		UpdatedAt: model.UpdatedAt,
 	}
 }
 
@@ -405,11 +703,16 @@ func (s *Store) UpsertRawStat(ctx context.Context, record RawStatRecord) (RawSta
 	}
 	var existing rawStatModel
 	query := s.db.WithContext(ctx).Where(
-		"source = ? AND project = ? AND period_start = ? AND period_end = ? AND granularity = ? AND format_version = ? AND content_hash = ?",
-		record.Source, record.Project, record.PeriodStart, record.PeriodEnd, record.Granularity, record.FormatVersion, record.ContentHash,
+		"source = ? AND project = ? AND period_start = ? AND granularity = ? AND format_version = ?",
+		record.Source, record.Project, record.PeriodStart, record.Granularity, record.FormatVersion,
 	).First(&existing)
 	if query.Error == nil {
-		return toRawStat(existing), false, nil
+		model.ID = existing.ID
+		model.CreatedAt = existing.CreatedAt
+		if err := s.db.WithContext(ctx).Save(&model).Error; err != nil {
+			return RawStatRecord{}, false, fmt.Errorf("update raw statistics: %w", err)
+		}
+		return toRawStat(model), false, nil
 	}
 	if !errors.Is(query.Error, gorm.ErrRecordNotFound) {
 		return RawStatRecord{}, false, query.Error
@@ -417,8 +720,8 @@ func (s *Store) UpsertRawStat(ctx context.Context, record RawStatRecord) (RawSta
 	if err := s.db.WithContext(ctx).Create(&model).Error; err != nil {
 		// A concurrent insert is idempotent too; return the row that won.
 		if existingErr := s.db.WithContext(ctx).Where(
-			"source = ? AND project = ? AND period_start = ? AND period_end = ? AND granularity = ? AND format_version = ? AND content_hash = ?",
-			record.Source, record.Project, record.PeriodStart, record.PeriodEnd, record.Granularity, record.FormatVersion, record.ContentHash,
+			"source = ? AND project = ? AND period_start = ? AND granularity = ? AND format_version = ?",
+			record.Source, record.Project, record.PeriodStart, record.Granularity, record.FormatVersion,
 		).First(&existing).Error; existingErr == nil {
 			return toRawStat(existing), false, nil
 		}
@@ -489,8 +792,8 @@ func (s *Store) UpsertAggregate(ctx context.Context, aggregate Aggregate) (Aggre
 	}
 	var existing aggregateModel
 	query := s.db.WithContext(ctx).Where(
-		"source = ? AND project = ? AND period_start = ? AND period_end = ? AND granularity = ? AND format_version = ?",
-		aggregate.Source, aggregate.Project, aggregate.PeriodStart, aggregate.PeriodEnd, aggregate.Granularity, aggregate.FormatVersion,
+		"source = ? AND project = ? AND period_start = ? AND granularity = ? AND format_version = ?",
+		aggregate.Source, aggregate.Project, aggregate.PeriodStart, aggregate.Granularity, aggregate.FormatVersion,
 	).First(&existing)
 	if query.Error == nil {
 		model.ID = existing.ID

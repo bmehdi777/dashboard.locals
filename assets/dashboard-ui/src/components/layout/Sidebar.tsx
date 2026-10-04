@@ -2,6 +2,7 @@ import {
   BarChart3,
   Code2,
   LayoutDashboard,
+  LayoutGrid,
   Search,
   Settings,
   X,
@@ -10,6 +11,7 @@ import { NavLink } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 
 const links = [
+  { to: '/shortcuts', label: 'Raccourcis', icon: LayoutGrid },
   { to: '/', label: 'Vue d’ensemble', icon: LayoutDashboard, end: true },
   { to: '/search', label: 'Recherche', icon: Search },
   { to: '/stats', label: 'Statistiques', icon: BarChart3 },
@@ -20,7 +22,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   return (
     <>
       {open ? <button className="sidebar-overlay" aria-label="Fermer le menu" onClick={onClose} /> : null}
-      <aside className={cn('sidebar', open && 'sidebar-open')}>
+      <aside id="primary-sidebar" className={cn('sidebar', open && 'sidebar-open')}>
         <div className="sidebar-brand">
           <div className="brand-mark" aria-hidden="true">
             <Code2 size={19} />

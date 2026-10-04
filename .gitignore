@@ -1,3 +1,5 @@
+internal/http/webassets/static
+
 # Go
 *.exe
 *.exe~

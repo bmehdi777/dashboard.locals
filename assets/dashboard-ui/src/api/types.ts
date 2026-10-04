@@ -77,6 +77,25 @@ export interface SearchRootInput {
   enabled: boolean
 }
 
+export interface Shortcut {
+  id: string
+  title: string
+  url: string
+  description: string
+  usageCount: number
+  lastUsedAt?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface ShortcutInput {
+  title: string
+  url: string
+  description: string
+}
+
+export type ShortcutSort = 'recent' | 'popular'
+
 export interface SearchRequest {
   rootId: string
   query: string
@@ -103,6 +122,33 @@ export interface SearchResponse {
   truncated?: boolean
   durationMs?: number
 }
+
+export interface SearchHistoryEntry {
+  id: string
+  rootId: string
+  rootName: string
+  query: string
+  literal: boolean
+  respectGitignore: boolean
+  includeBinary: boolean
+  resultCount: number
+  truncated: boolean
+  status: 'completed' | string
+  createdAt: string
+}
+
+export interface SearchStreamResultEvent {
+  type: 'result'
+  result: SearchResult
+}
+
+export interface SearchStreamDoneEvent {
+  type: 'done'
+  count: number
+  truncated: boolean
+}
+
+export type SearchStreamEvent = SearchStreamResultEvent | SearchStreamDoneEvent
 
 export interface OpenFileRequest {
   rootId: string
