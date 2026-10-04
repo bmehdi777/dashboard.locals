@@ -1,75 +1,47 @@
-# React + TypeScript + Vite
+# dashboard.locals — web-ui
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Interface React/TypeScript/Vite du projet `dashboard.locals`.
 
-Currently, two official plugins are available:
+L’application est conçue pour être servie par le serveur Go depuis la même
+origine. Elle communique exclusivement avec les routes versionnées :
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```text
+/api/v1
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Le frontend ne lance aucun processus local, ne lit pas SQLite et ne contacte
+pas directement OpenCode, `ripgrep` ou un éditeur.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Fonctionnalités
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- vue d’ensemble de l’état du serveur et de l’usage IA ;
+- recherche dans une racine configurée avec options `.gitignore` et fichiers
+  binaires ;
+- copie d’un chemin de résultat et demande d’ouverture via l’API serveur ;
+- statistiques quotidiennes, modèles, outils, tokens et coûts ;
+- synchronisation des statistiques ;
+- configuration des racines, de l’éditeur et des préférences ;
+- états de chargement, erreur, vide et succès ;
+- interface responsive et navigation clavier.
 
+## Développement
+
+```bash
+npm install
+npm run dev
 ```
+
+Le serveur API attendu est l’origine courante. Aucun mock n’est activé en
+production : lorsque le serveur n’est pas lancé, l’interface affiche son état
+d’erreur.
+
+## Vérifications
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+Les réponses du serveur sont converties dans `src/api/normalize.ts` afin de
+conserver les composants indépendants des formes brutes de l’API externe.
