@@ -9,6 +9,7 @@ import type {
   SearchResult,
   SearchRoot,
   Shortcut,
+  ShortcutFolder,
   SearchStreamEvent,
   Settings,
   StatsResponse,
@@ -109,12 +110,33 @@ export function normalizeShortcuts(value: unknown): Shortcut[] {
         title: readString(item.title ?? item.name) ?? 'Raccourci sans nom',
         url,
         description: readString(item.description) ?? '',
+        position: asNumber(item.position, index),
         usageCount: asNumber(item.usageCount ?? item.usage_count),
+        folderId: readString(item.folderId ?? item.folder_id),
         lastUsedAt: readString(item.lastUsedAt ?? item.last_used_at),
         createdAt: readString(item.createdAt ?? item.created_at),
         updatedAt: readString(item.updatedAt ?? item.updated_at),
       },
     ]
+  })
+}
+
+export function normalizeShortcutFolders(value: unknown): ShortcutFolder[] {
+  const source = unwrap(value)
+  const folders = isRecord(source) ? source.data ?? source.folders : source
+
+  return readArray(folders).flatMap((item, index) => {
+    if (!isRecord(item)) return []
+    const id = readString(item.id) ?? `folder-${index}`
+    const name = readString(item.name)
+    if (!name) return []
+    return [{
+      id,
+      name,
+      position: asNumber(item.position, index),
+      createdAt: readString(item.createdAt ?? item.created_at),
+      updatedAt: readString(item.updatedAt ?? item.updated_at),
+    }]
   })
 }
 

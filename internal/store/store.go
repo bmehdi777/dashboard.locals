@@ -20,7 +20,7 @@ var (
 	ErrConflict = errors.New("storage conflict")
 )
 
-const currentSchemaVersion = 5
+const currentSchemaVersion = 7
 
 type Store struct {
 	db *gorm.DB
@@ -55,10 +55,20 @@ type shortcutModel struct {
 	Title       string     `gorm:"not null;size:200"`
 	URL         string     `gorm:"not null;size:2048"`
 	Description string     `gorm:"type:text;not null"`
+	Position    int        `gorm:"not null;default:0;index"`
+	FolderID    *string    `gorm:"index;size:32"`
 	UsageCount  int64      `gorm:"not null;default:0;index"`
 	LastUsedAt  *time.Time `gorm:"index"`
 	CreatedAt   time.Time  `gorm:"not null"`
 	UpdatedAt   time.Time  `gorm:"not null"`
+}
+
+type shortcutFolderModel struct {
+	ID        string    `gorm:"primaryKey;size:32"`
+	Name      string    `gorm:"not null;uniqueIndex;size:100"`
+	Position  int       `gorm:"not null;default:0;index"`
+	CreatedAt time.Time `gorm:"not null"`
+	UpdatedAt time.Time `gorm:"not null"`
 }
 
 type rawStatModel struct {
@@ -117,6 +127,7 @@ type searchHistoryModel struct {
 	RootID           string    `gorm:"not null;index;size:32"`
 	RootName         string    `gorm:"not null;size:200"`
 	Query            string    `gorm:"not null;size:4096"`
+	SearchIn         string    `gorm:"not null;size:20;default:content"`
 	Literal          bool      `gorm:"not null"`
 	RespectGitignore bool      `gorm:"not null"`
 	IncludeBinary    bool      `gorm:"not null"`
@@ -140,10 +151,25 @@ type Shortcut struct {
 	Title       string     `json:"title"`
 	URL         string     `json:"url"`
 	Description string     `json:"description"`
+	Position    int        `json:"position"`
+	FolderID    *string    `json:"folderId,omitempty"`
 	UsageCount  int64      `json:"usageCount"`
 	LastUsedAt  *time.Time `json:"lastUsedAt,omitempty"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
+}
+
+type ShortcutFolder struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Position  int       `json:"position"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type ShortcutOrder struct {
+	ID       string
+	FolderID *string
 }
 
 type RawStatRecord struct {
@@ -202,6 +228,7 @@ type SearchHistory struct {
 	RootID           string    `json:"rootId"`
 	RootName         string    `json:"rootName"`
 	Query            string    `json:"query"`
+	SearchIn         string    `json:"searchIn"`
 	Literal          bool      `json:"literal"`
 	RespectGitignore bool      `json:"respectGitignore"`
 	IncludeBinary    bool      `json:"includeBinary"`
@@ -310,6 +337,14 @@ func (s *Store) Migrate(ctx context.Context) error {
 				if err := tx.AutoMigrate(&shortcutModel{}); err != nil {
 					return fmt.Errorf("migrate shortcuts schema: %w", err)
 				}
+			case 6:
+				if err := migrateShortcutOrdering(tx); err != nil {
+					return fmt.Errorf("migrate shortcut ordering schema: %w", err)
+				}
+			case 7:
+				if err := tx.AutoMigrate(&shortcutFolderModel{}, &shortcutModel{}); err != nil {
+					return fmt.Errorf("migrate shortcut folders schema: %w", err)
+				}
 			}
 			if err := tx.Create(&migrationModel{Version: version, AppliedAt: time.Now().UTC()}).Error; err != nil {
 				return fmt.Errorf("record schema version: %w", err)
@@ -317,6 +352,22 @@ func (s *Store) Migrate(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+func migrateShortcutOrdering(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&shortcutModel{}); err != nil {
+		return err
+	}
+	var shortcuts []shortcutModel
+	if err := tx.Order("created_at DESC, title ASC, id ASC").Find(&shortcuts).Error; err != nil {
+		return err
+	}
+	for position, shortcut := range shortcuts {
+		if err := tx.Model(&shortcutModel{}).Where("id = ?", shortcut.ID).Update("position", position).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateIdempotentStatistics repairs the identity indexes introduced by the
@@ -504,9 +555,12 @@ func (s *Store) CreateSearchHistory(ctx context.Context, history SearchHistory) 
 	if history.CreatedAt.IsZero() {
 		history.CreatedAt = time.Now().UTC()
 	}
+	if history.SearchIn == "" {
+		history.SearchIn = "content"
+	}
 	model := searchHistoryModel{
 		ID: history.ID, RootID: history.RootID, RootName: history.RootName,
-		Query: history.Query, Literal: history.Literal,
+		Query: history.Query, SearchIn: history.SearchIn, Literal: history.Literal,
 		RespectGitignore: history.RespectGitignore, IncludeBinary: history.IncludeBinary,
 		ResultCount: history.ResultCount, Truncated: history.Truncated,
 		Status: history.Status, CreatedAt: history.CreatedAt,
@@ -551,9 +605,12 @@ func (s *Store) ClearSearchHistory(ctx context.Context) error {
 }
 
 func toSearchHistory(model searchHistoryModel) SearchHistory {
+	if model.SearchIn == "" {
+		model.SearchIn = "content"
+	}
 	return SearchHistory{
 		ID: model.ID, RootID: model.RootID, RootName: model.RootName,
-		Query: model.Query, Literal: model.Literal,
+		Query: model.Query, SearchIn: model.SearchIn, Literal: model.Literal,
 		RespectGitignore: model.RespectGitignore, IncludeBinary: model.IncludeBinary,
 		ResultCount: model.ResultCount, Truncated: model.Truncated,
 		Status: model.Status, CreatedAt: model.CreatedAt,
@@ -565,6 +622,102 @@ func toSearchRoot(model searchRootModel) SearchRoot {
 		ID: model.ID, Name: model.Name, Path: model.Path, Enabled: model.Enabled,
 		CreatedAt: model.CreatedAt, UpdatedAt: model.UpdatedAt,
 	}
+}
+
+func (s *Store) ListShortcutFolders(ctx context.Context) ([]ShortcutFolder, error) {
+	var models []shortcutFolderModel
+	if err := s.db.WithContext(ctx).Order("position ASC").Order("name ASC").Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list shortcut folders: %w", err)
+	}
+	result := make([]ShortcutFolder, 0, len(models))
+	for _, model := range models {
+		result = append(result, toShortcutFolder(model))
+	}
+	return result, nil
+}
+
+func (s *Store) GetShortcutFolder(ctx context.Context, id string) (ShortcutFolder, error) {
+	var model shortcutFolderModel
+	if err := s.db.WithContext(ctx).First(&model, "id = ?", id).Error; err != nil {
+		return ShortcutFolder{}, err
+	}
+	return toShortcutFolder(model), nil
+}
+
+func (s *Store) CreateShortcutFolder(ctx context.Context, folder ShortcutFolder) (ShortcutFolder, error) {
+	if folder.ID == "" {
+		folder.ID = newID()
+	}
+	now := time.Now().UTC()
+	if folder.CreatedAt.IsZero() {
+		folder.CreatedAt = now
+	}
+	if folder.UpdatedAt.IsZero() {
+		folder.UpdatedAt = now
+	}
+	var created shortcutFolderModel
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lastPosition int
+		if err := tx.Model(&shortcutFolderModel{}).Select("COALESCE(MAX(position), -1)").Scan(&lastPosition).Error; err != nil {
+			return err
+		}
+		model := shortcutFolderModel{
+			ID: folder.ID, Name: folder.Name, Position: lastPosition + 1,
+			CreatedAt: folder.CreatedAt, UpdatedAt: folder.UpdatedAt,
+		}
+		if err := tx.Create(&model).Error; err != nil {
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				return fmt.Errorf("%w: shortcut folder already exists", ErrConflict)
+			}
+			return fmt.Errorf("create shortcut folder: %w", err)
+		}
+		created = model
+		return nil
+	})
+	if err != nil {
+		return ShortcutFolder{}, err
+	}
+	return toShortcutFolder(created), nil
+}
+
+func (s *Store) UpdateShortcutFolder(ctx context.Context, folder ShortcutFolder) (ShortcutFolder, error) {
+	if folder.ID == "" {
+		return ShortcutFolder{}, errors.New("shortcut folder id is empty")
+	}
+	folder.UpdatedAt = time.Now().UTC()
+	result := s.db.WithContext(ctx).Model(&shortcutFolderModel{}).Where("id = ?", folder.ID).Updates(map[string]any{
+		"name":       folder.Name,
+		"updated_at": folder.UpdatedAt,
+	})
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
+			return ShortcutFolder{}, fmt.Errorf("%w: shortcut folder already exists", ErrConflict)
+		}
+		return ShortcutFolder{}, fmt.Errorf("update shortcut folder: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ShortcutFolder{}, gorm.ErrRecordNotFound
+	}
+	return s.GetShortcutFolder(ctx, folder.ID)
+}
+
+func (s *Store) DeleteShortcutFolder(ctx context.Context, id string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if result := tx.Model(&shortcutModel{}).Where("folder_id = ?", id).Updates(map[string]any{
+			"folder_id":  nil,
+			"updated_at": time.Now().UTC(),
+		}); result.Error != nil {
+			return fmt.Errorf("unassign shortcuts from folder: %w", result.Error)
+		}
+		result := tx.Delete(&shortcutFolderModel{}, "id = ?", id)
+		if result.Error != nil {
+			return fmt.Errorf("delete shortcut folder: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
 }
 
 func (s *Store) ListShortcuts(ctx context.Context, sortBy string, limit int) ([]Shortcut, error) {
@@ -579,6 +732,8 @@ func (s *Store) ListShortcuts(ctx context.Context, sortBy string, limit int) ([]
 	switch sortBy {
 	case "popular":
 		query = query.Order("usage_count DESC").Order("CASE WHEN last_used_at IS NULL THEN 1 ELSE 0 END ASC").Order("last_used_at DESC").Order("title ASC")
+	case "custom":
+		query = query.Order("position ASC").Order("created_at DESC").Order("title ASC")
 	default:
 		query = query.Order("created_at DESC").Order("title ASC")
 	}
@@ -613,19 +768,51 @@ func (s *Store) CreateShortcut(ctx context.Context, shortcut Shortcut) (Shortcut
 	if shortcut.UpdatedAt.IsZero() {
 		shortcut.UpdatedAt = now
 	}
-	model := shortcutModel{
-		ID: shortcut.ID, Title: shortcut.Title, URL: shortcut.URL,
-		Description: shortcut.Description, UsageCount: shortcut.UsageCount,
-		LastUsedAt: shortcut.LastUsedAt, CreatedAt: shortcut.CreatedAt,
-		UpdatedAt: shortcut.UpdatedAt,
-	}
-	if err := s.db.WithContext(ctx).Create(&model).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return Shortcut{}, fmt.Errorf("%w: shortcut already exists", ErrConflict)
+	var created shortcutModel
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lastPosition int
+		if err := tx.Model(&shortcutModel{}).Select("COALESCE(MAX(position), -1)").Scan(&lastPosition).Error; err != nil {
+			return err
 		}
-		return Shortcut{}, fmt.Errorf("create shortcut: %w", err)
+		model := shortcutModel{
+			ID: shortcut.ID, Title: shortcut.Title, URL: shortcut.URL,
+			Description: shortcut.Description, Position: lastPosition + 1, FolderID: shortcut.FolderID, UsageCount: shortcut.UsageCount,
+			LastUsedAt: shortcut.LastUsedAt, CreatedAt: shortcut.CreatedAt,
+			UpdatedAt: shortcut.UpdatedAt,
+		}
+		if err := tx.Create(&model).Error; err != nil {
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				return fmt.Errorf("%w: shortcut already exists", ErrConflict)
+			}
+			return fmt.Errorf("create shortcut: %w", err)
+		}
+		created = model
+		return nil
+	})
+	if err != nil {
+		return Shortcut{}, err
 	}
-	return toShortcut(model), nil
+	return toShortcut(created), nil
+}
+
+func (s *Store) ReorderShortcuts(ctx context.Context, order []ShortcutOrder) error {
+	now := time.Now().UTC()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for position, item := range order {
+			result := tx.Model(&shortcutModel{}).Where("id = ?", item.ID).Updates(map[string]any{
+				"position":   position,
+				"folder_id":  item.FolderID,
+				"updated_at": now,
+			})
+			if result.Error != nil {
+				return fmt.Errorf("reorder shortcuts: %w", result.Error)
+			}
+			if result.RowsAffected == 0 {
+				return gorm.ErrRecordNotFound
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) UpdateShortcut(ctx context.Context, shortcut Shortcut) (Shortcut, error) {
@@ -637,6 +824,7 @@ func (s *Store) UpdateShortcut(ctx context.Context, shortcut Shortcut) (Shortcut
 		"title":       shortcut.Title,
 		"url":         shortcut.URL,
 		"description": shortcut.Description,
+		"folder_id":   shortcut.FolderID,
 		"updated_at":  shortcut.UpdatedAt,
 	})
 	if result.Error != nil {
@@ -678,9 +866,16 @@ func (s *Store) RecordShortcutUse(ctx context.Context, id string) (Shortcut, err
 func toShortcut(model shortcutModel) Shortcut {
 	return Shortcut{
 		ID: model.ID, Title: model.Title, URL: model.URL,
-		Description: model.Description, UsageCount: model.UsageCount,
+		Description: model.Description, Position: model.Position, FolderID: model.FolderID, UsageCount: model.UsageCount,
 		LastUsedAt: model.LastUsedAt, CreatedAt: model.CreatedAt,
 		UpdatedAt: model.UpdatedAt,
+	}
+}
+
+func toShortcutFolder(model shortcutFolderModel) ShortcutFolder {
+	return ShortcutFolder{
+		ID: model.ID, Name: model.Name, Position: model.Position,
+		CreatedAt: model.CreatedAt, UpdatedAt: model.UpdatedAt,
 	}
 }
 

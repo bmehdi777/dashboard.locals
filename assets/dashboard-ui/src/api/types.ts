@@ -82,7 +82,9 @@ export interface Shortcut {
   title: string
   url: string
   description: string
+  position: number
   usageCount: number
+  folderId?: string
   lastUsedAt?: string
   createdAt?: string
   updatedAt?: string
@@ -92,13 +94,34 @@ export interface ShortcutInput {
   title: string
   url: string
   description: string
+  folderId?: string
 }
 
-export type ShortcutSort = 'recent' | 'popular'
+export interface ShortcutFolder {
+  id: string
+  name: string
+  position: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface ShortcutFolderInput {
+  name: string
+}
+
+export interface ShortcutOrderItem {
+  id: string
+  folderId?: string
+}
+
+export type ShortcutSort = 'recent' | 'popular' | 'custom'
+
+export type SearchScope = 'content' | 'filename'
 
 export interface SearchRequest {
   rootId: string
   query: string
+  searchIn?: SearchScope
   respectGitignore: boolean
   ignoreBinary: boolean
   literal?: boolean
@@ -128,6 +151,7 @@ export interface SearchHistoryEntry {
   rootId: string
   rootName: string
   query: string
+  searchIn?: SearchScope
   literal: boolean
   respectGitignore: boolean
   includeBinary: boolean

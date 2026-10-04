@@ -10,12 +10,14 @@ import { PageHeader } from '../../components/layout/PageHeader'
 import { OpenCodeBadge } from '../../components/feedback/StatusBadge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/Card'
 import { formatCost, formatNumber } from '../../lib/formatters'
+import { useUserName } from '../../lib/userPreferences'
 import { useHealthQuery, useRootsQuery, useShortcutsQuery, useStatsQuery } from '../shared/hooks'
 import { DEFAULT_STATS_FILTERS } from '../stats/defaults'
 import { ShortcutGrid } from '../shortcuts/ShortcutCard'
 
 export function DashboardPage() {
   const healthQuery = useHealthQuery()
+  const userName = useUserName()
   const rootsQuery = useRootsQuery()
   const shortcutsQuery = useShortcutsQuery('popular', 5)
   const statsQuery = useStatsQuery(DEFAULT_STATS_FILTERS)
@@ -26,7 +28,7 @@ export function DashboardPage() {
     <div className="page-stack">
       <PageHeader
         eyebrow="Vue d’ensemble"
-        title="Bonjour, développeur."
+        title={`Bonjour, ${userName || 'développeur'}.`}
         description="Votre espace local pour explorer le code et comprendre votre usage IA."
         actions={<Link to="/search" className="button button-default button-md"><Search size={16} aria-hidden="true" /> Nouvelle recherche</Link>}
       />

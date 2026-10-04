@@ -11,19 +11,40 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
 
 var (
-	ErrInvalidQuery    = errors.New("invalid search query")
-	ErrSearchTimeout   = errors.New("search timed out")
-	ErrSearchExecution = errors.New("search execution failed")
-	ErrResultLimit     = errors.New("search result limit reached")
+	ErrInvalidQuery        = errors.New("invalid search query")
+	ErrInvalidSearchTarget = errors.New("invalid search target")
+	ErrSearchTimeout       = errors.New("search timed out")
+	ErrSearchExecution     = errors.New("search execution failed")
+	ErrResultLimit         = errors.New("search result limit reached")
 )
+
+type SearchTarget string
+
+const (
+	SearchTargetContent  SearchTarget = "content"
+	SearchTargetFileName SearchTarget = "filename"
+)
+
+func ParseSearchTarget(value string) (SearchTarget, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", string(SearchTargetContent):
+		return SearchTargetContent, nil
+	case string(SearchTargetFileName):
+		return SearchTargetFileName, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrInvalidSearchTarget, value)
+	}
+}
 
 type Options struct {
 	Query            string
+	Target           SearchTarget
 	Literal          bool
 	RespectGitignore bool
 	IncludeBinary    bool
@@ -136,6 +157,17 @@ func BuildArguments(options Options) ([]string, error) {
 	if options.MaxResults < 0 || options.MaxResults > 10000 {
 		return nil, errors.New("maxResults must be between 0 and 10000")
 	}
+	target, err := ParseSearchTarget(string(options.Target))
+	if err != nil {
+		return nil, err
+	}
+	if target == SearchTargetFileName {
+		args := []string{"--files", "--null", "--no-follow"}
+		if !options.RespectGitignore {
+			args = append(args, "--no-ignore")
+		}
+		return args, nil
+	}
 	args := []string{"--json", "--color=never", "--no-follow"}
 	if options.Literal {
 		args = append(args, "--fixed-strings")
@@ -172,12 +204,21 @@ func (s *Service) Search(ctx context.Context, rootID string, options Options) ([
 	if argsOptions.Timeout <= 0 || argsOptions.Timeout > 5*time.Minute {
 		return nil, errors.New("search timeout must be between 1ns and 5m")
 	}
+	target, err := ParseSearchTarget(string(argsOptions.Target))
+	if err != nil {
+		return nil, err
+	}
+	argsOptions.Target = target
 	args, err := BuildArguments(argsOptions)
 	if err != nil {
 		return nil, err
 	}
 	searchContext, cancel := context.WithTimeout(ctx, argsOptions.Timeout)
 	defer cancel()
+	if target == SearchTargetFileName {
+		results, _, searchErr := s.searchFileNames(searchContext, canonical, argsOptions, args)
+		return results, searchErr
+	}
 	stdout, stderr, runErr := s.runner.Run(searchContext, canonical, "rg", args)
 	if runErr != nil {
 		if errors.Is(searchContext.Err(), context.DeadlineExceeded) || errors.Is(runErr, context.DeadlineExceeded) {
@@ -238,6 +279,11 @@ func (s *Service) SearchStream(ctx context.Context, rootID string, options Optio
 	if streamOptions.Timeout <= 0 || streamOptions.Timeout > 5*time.Minute {
 		return StreamResult{}, errors.New("search timeout must be between 1ns and 5m")
 	}
+	target, err := ParseSearchTarget(string(streamOptions.Target))
+	if err != nil {
+		return StreamResult{}, err
+	}
+	streamOptions.Target = target
 	args, err := BuildArguments(streamOptions)
 	if err != nil {
 		return StreamResult{}, err
@@ -259,6 +305,18 @@ func (s *Service) SearchStream(ctx context.Context, rootID string, options Optio
 
 	searchContext, cancel := context.WithTimeout(ctx, streamOptions.Timeout)
 	defer cancel()
+	if target == SearchTargetFileName {
+		results, truncated, searchErr := s.searchFileNames(searchContext, canonical, streamOptions, args)
+		if searchErr != nil {
+			return StreamResult{}, searchErr
+		}
+		for _, result := range results {
+			if callbackErr := onResult(result); callbackErr != nil {
+				return StreamResult{}, callbackErr
+			}
+		}
+		return StreamResult{Count: len(results), Truncated: truncated}, nil
+	}
 	streamResult := StreamResult{}
 	runErr := streamRunner.RunStream(searchContext, canonical, "rg", args, func(line []byte) error {
 		result, matched, parseErr := parseResultLine(canonical, line)
@@ -288,6 +346,74 @@ func (s *Service) SearchStream(ctx context.Context, rootID string, options Optio
 		return StreamResult{}, runErr
 	}
 	return streamResult, nil
+}
+
+func (s *Service) searchFileNames(ctx context.Context, root string, options Options, args []string) ([]Result, bool, error) {
+	matcher, err := newFileNameMatcher(options)
+	if err != nil {
+		return nil, false, err
+	}
+	stdout, stderr, runErr := s.runner.Run(ctx, root, "rg", args)
+	if runErr != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(runErr, context.DeadlineExceeded) {
+			return nil, false, ErrSearchTimeout
+		}
+		if isNoMatchExit(runErr) {
+			return []Result{}, false, nil
+		}
+		message := strings.TrimSpace(string(stderr))
+		if message == "" {
+			message = "ripgrep could not list files"
+		}
+		return nil, false, fmt.Errorf("%w: %s", ErrSearchExecution, sanitizeCommandError(message))
+	}
+
+	results := make([]Result, 0)
+	truncated := false
+	for _, rawPath := range bytes.Split(stdout, []byte{0}) {
+		if len(rawPath) == 0 {
+			continue
+		}
+		path := strings.TrimSuffix(string(rawPath), "\n")
+		path = filepath.ToSlash(path)
+		if !matcher(path) {
+			continue
+		}
+		absolute, resolveErr := ResolveResultPath(root, path)
+		if resolveErr != nil {
+			if errors.Is(resolveErr, ErrSymlink) || errors.Is(resolveErr, ErrPathOutside) || errors.Is(resolveErr, os.ErrNotExist) {
+				continue
+			}
+			return nil, false, fmt.Errorf("%w: invalid result path", ErrSearchExecution)
+		}
+		relative, relErr := filepath.Rel(root, absolute)
+		if relErr != nil {
+			return nil, false, fmt.Errorf("%w: invalid result path", ErrSearchExecution)
+		}
+		relative = filepath.ToSlash(relative)
+		results = append(results, Result{Path: relative, Line: 1, Column: 1, Excerpt: relative})
+		if options.MaxResults > 0 && len(results) >= options.MaxResults {
+			truncated = true
+			break
+		}
+	}
+	return results, truncated, nil
+}
+
+func newFileNameMatcher(options Options) (func(string) bool, error) {
+	query := strings.TrimSpace(options.Query)
+	if options.Literal {
+		return func(path string) bool {
+			return strings.Contains(path, query) || strings.Contains(filepath.Base(filepath.FromSlash(path)), query)
+		}, nil
+	}
+	pattern, err := regexp.Compile(query)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid filename pattern", ErrInvalidQuery)
+	}
+	return func(path string) bool {
+		return pattern.MatchString(path) || pattern.MatchString(filepath.Base(filepath.FromSlash(path)))
+	}, nil
 }
 
 func sanitizeCommandError(message string) string {

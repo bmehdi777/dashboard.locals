@@ -14,6 +14,7 @@ export const searchApi = {
       body: jsonBody({
         rootId: request.rootId,
         query: request.query,
+        ...(request.searchIn === undefined ? {} : { searchIn: request.searchIn }),
         respectGitignore: request.respectGitignore,
         includeBinary: !request.ignoreBinary,
         ...(request.maxResults === undefined ? {} : { maxResults: request.maxResults }),
@@ -35,6 +36,7 @@ export const searchApi = {
         body: jsonBody({
           rootId: request.rootId,
           query: request.query,
+          ...(request.searchIn === undefined ? {} : { searchIn: request.searchIn }),
           respectGitignore: request.respectGitignore,
           includeBinary: !request.ignoreBinary,
           ...(request.maxResults === undefined ? {} : { maxResults: request.maxResults }),

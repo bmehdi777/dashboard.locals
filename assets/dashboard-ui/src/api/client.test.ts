@@ -25,6 +25,7 @@ describe('searchApi', () => {
     const response = await searchApi.search({
       rootId: 'root-1',
       query: 'useQuery',
+      searchIn: 'filename',
       respectGitignore: true,
       ignoreBinary: true,
     })
@@ -39,6 +40,7 @@ describe('searchApi', () => {
     const request = fetchMock.mock.calls[0]?.[1]
     expect(JSON.parse(String(request?.body))).toMatchObject({
       rootId: 'root-1',
+      searchIn: 'filename',
       includeBinary: false,
     })
     expect(JSON.parse(String(request?.body))).not.toHaveProperty('ignoreBinary')

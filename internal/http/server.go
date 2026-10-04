@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -15,9 +16,10 @@ import (
 )
 
 type Config struct {
-	API      v1.Dependencies
-	StaticFS fs.FS
-	Logger   *log.Logger
+	API          v1.Dependencies
+	StaticFS     fs.FS
+	Logger       *log.Logger
+	AccessLogger *log.Logger
 }
 
 func NewHandler(config Config) http.Handler {
@@ -32,13 +34,19 @@ func NewHandler(config Config) http.Handler {
 		logger = log.Default()
 	}
 
-	return withRecovery(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	base := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isAPIPath(r.URL.Path) {
 			apiHandler.ServeHTTP(w, r)
 			return
 		}
 		serveFrontend(w, r, staticFS, static)
-	}), logger)
+	})
+	recovered := withRecovery(base, logger)
+	accessLogger := config.AccessLogger
+	if accessLogger == nil {
+		accessLogger = log.New(io.Discard, "", 0)
+	}
+	return withAccessLog(recovered, accessLogger)
 }
 
 func isAPIPath(value string) bool {
@@ -91,6 +99,64 @@ func withRecovery(next http.Handler, logger *log.Logger) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+type accessResponseWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (w *accessResponseWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *accessResponseWriter) Write(value []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	count, err := w.ResponseWriter.Write(value)
+	w.bytes += count
+	return count, err
+}
+
+func (w *accessResponseWriter) Flush() {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func withAccessLog(next http.Handler, logger *log.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		response := &accessResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(response, r)
+		status := response.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		logger.Printf("method=%s path=%s status=%d bytes=%d duration_ms=%d", sanitizeLogField(r.Method), sanitizeLogField(r.URL.Path), status, response.bytes, time.Since(started).Milliseconds())
+	})
+}
+
+func sanitizeLogField(value string) string {
+	value = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return '?'
+		}
+		return r
+	}, value)
+	if len(value) > 2048 {
+		return value[:2048]
+	}
+	return value
 }
 
 type Server struct {

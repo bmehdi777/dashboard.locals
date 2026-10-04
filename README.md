@@ -19,6 +19,26 @@ La base est créée par défaut dans :
 `XDG_CONFIG_HOME` et les variables `DASHBOARD_LOCALS_*` permettent de définir
 les chemins et les timeouts opérationnels.
 
+## Logs
+
+Les logs sont écrits par défaut dans :
+
+```text
+/var/log/dashboard.locals/access.log
+/var/log/dashboard.locals/error.log
+```
+
+L'unité systemd provisionne automatiquement le répertoire de logs. Pour une
+exécution manuelle ou un autre emplacement, utilisez :
+
+```sh
+DASHBOARD_LOCALS_LOG_DIR="$HOME/.local/state/dashboard.locals/log" \
+  go run ./cmd/server
+```
+
+Les requêtes d'accès n'enregistrent pas les query strings, les corps JSON, les
+tokens ou les credentials.
+
 ## Vérifications
 
 ```sh
@@ -91,17 +111,24 @@ page **Raccourcis** de l'interface. L'accueil affiche automatiquement les cinq
 liens les plus ouverts. L'API correspondante est :
 
 ```text
-GET    /api/v1/shortcuts?sort=recent|popular&limit=5
+GET    /api/v1/shortcuts?sort=recent|popular|custom&limit=5
 POST   /api/v1/shortcuts
 PATCH  /api/v1/shortcuts/{shortcutID}
 DELETE /api/v1/shortcuts/{shortcutID}
+PUT    /api/v1/shortcuts/order
 POST   /api/v1/shortcuts/{shortcutID}/use
 GET    /api/v1/shortcuts/{shortcutID}/favicon
+GET    /api/v1/shortcut-folders
+POST   /api/v1/shortcut-folders
+PATCH  /api/v1/shortcut-folders/{folderID}
+DELETE /api/v1/shortcut-folders/{folderID}
 ```
 
 Les URLs sont validées côté serveur et doivent utiliser `http` ou `https`.
 L'appel `use` est effectué lorsque l'utilisateur ouvre un panneau afin de
-maintenir le classement des liens les plus utilisés.
+maintenir le classement des liens les plus utilisés. Le classement populaire de
+l'accueil reste indépendant des dossiers et de l'ordre personnalisé de la page
+**Raccourcis**.
 
 ## CLI
 

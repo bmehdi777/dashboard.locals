@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { cn } from '../../lib/utils'
+import { readSidebarCollapsed, saveSidebarCollapsed } from '../../lib/userPreferences'
 import { Header } from './Header'
 import { Sidebar } from './Sidebar'
 
@@ -15,7 +16,7 @@ function getIsMobileViewport() {
 export function AppShell() {
   const [isMobileViewport, setIsMobileViewport] = useState(getIsMobileViewport)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
@@ -36,7 +37,9 @@ export function AppShell() {
       return
     }
 
-    setSidebarCollapsed((collapsed) => !collapsed)
+    const nextCollapsed = !sidebarCollapsed
+    setSidebarCollapsed(nextCollapsed)
+    saveSidebarCollapsed(nextCollapsed)
   }
 
   const sidebarExpanded = isMobileViewport ? sidebarOpen : !sidebarCollapsed

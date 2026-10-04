@@ -1,7 +1,9 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Link, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import { LoadingState } from './components/feedback/LoadingState'
+import { updateFavicon } from './lib/favicon'
+import { useAppearance } from './lib/userPreferences'
 
 const DashboardPage = lazy(async () => {
   const module = await import('./features/dashboard/DashboardPage')
@@ -53,5 +55,13 @@ function AppRoutes() {
 }
 
 export default function App() {
+  const appearance = useAppearance()
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = appearance.mode
+    document.documentElement.dataset.colorTheme = appearance.colorTheme
+    updateFavicon(appearance.colorTheme)
+  }, [appearance])
+
   return <AppRoutes />
 }

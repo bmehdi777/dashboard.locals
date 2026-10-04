@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { healthApi, historyApi, searchRootsApi, settingsApi, shortcutsApi, statsApi } from '../../api'
-import type { SearchHistoryEntry, SearchRoot, SearchRootInput, SettingsPatch, Shortcut, ShortcutInput, ShortcutSort, StatsFilters } from '../../api'
+import { healthApi, historyApi, searchRootsApi, settingsApi, shortcutFoldersApi, shortcutsApi, statsApi } from '../../api'
+import type { SearchHistoryEntry, SearchRoot, SearchRootInput, SettingsPatch, Shortcut, ShortcutFolderInput, ShortcutInput, ShortcutOrderItem, ShortcutSort, StatsFilters } from '../../api'
 
 export const queryKeys = {
   health: ['health'] as const,
@@ -8,6 +8,7 @@ export const queryKeys = {
   roots: ['search-roots'] as const,
   history: ['search-history'] as const,
   shortcuts: ['shortcuts'] as const,
+  shortcutFolders: ['shortcut-folders'] as const,
   stats: (filters: StatsFilters) => ['stats', filters] as const,
 }
 
@@ -58,6 +59,15 @@ export function useShortcutsQuery(sort: ShortcutSort = 'recent', limit?: number)
   })
 }
 
+export function useShortcutFoldersQuery() {
+  return useQuery({
+    queryKey: queryKeys.shortcutFolders,
+    queryFn: shortcutFoldersApi.list,
+    retry: false,
+    staleTime: 30_000,
+  })
+}
+
 export function useCreateShortcutMutation() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -73,6 +83,48 @@ export function useUpdateShortcutMutation() {
   return useMutation({
     mutationFn: ({ id, shortcut }: { id: string; shortcut: Partial<ShortcutInput> }) =>
       shortcutsApi.update(id, shortcut),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shortcuts })
+    },
+  })
+}
+
+export function useCreateShortcutFolderMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (folder: ShortcutFolderInput) => shortcutFoldersApi.create(folder),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shortcutFolders })
+    },
+  })
+}
+
+export function useUpdateShortcutFolderMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, folder }: { id: string; folder: Partial<ShortcutFolderInput> }) =>
+      shortcutFoldersApi.update(id, folder),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shortcutFolders })
+    },
+  })
+}
+
+export function useDeleteShortcutFolderMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => shortcutFoldersApi.remove(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shortcutFolders })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shortcuts })
+    },
+  })
+}
+
+export function useReorderShortcutsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (items: ShortcutOrderItem[]) => shortcutsApi.reorder(items),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.shortcuts })
     },

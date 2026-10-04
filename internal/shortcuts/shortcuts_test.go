@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 
@@ -22,10 +23,10 @@ func TestServiceValidatesHTTPShortcutURLs(t *testing.T) {
 	}
 	service := NewService(database)
 
-	if _, err := service.Create(context.Background(), "Script", "javascript:alert(1)", ""); !errors.Is(err, ErrInvalidShortcut) {
+	if _, err := service.Create(context.Background(), "Script", "javascript:alert(1)", "", nil); !errors.Is(err, ErrInvalidShortcut) {
 		t.Fatalf("expected invalid URL error, got %v", err)
 	}
-	if _, err := service.Create(context.Background(), "Script", "https://example.com", ""); err != nil {
+	if _, err := service.Create(context.Background(), "Script", "https://example.com", "", nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -41,12 +42,12 @@ func TestServiceUpdatesAndUsesShortcut(t *testing.T) {
 	}
 	service := NewService(database)
 
-	created, err := service.Create(context.Background(), "Accueil", "https://example.com", "Portail")
+	created, err := service.Create(context.Background(), "Accueil", "https://example.com", "Portail", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	description := "Portail principal"
-	updated, err := service.Update(context.Background(), created.ID, nil, nil, &description)
+	updated, err := service.Update(context.Background(), created.ID, nil, nil, &description, nil)
 	if err != nil || updated.Description != description {
 		t.Fatalf("unexpected update: %+v, %v", updated, err)
 	}
@@ -78,7 +79,7 @@ func TestServiceFetchesAndCachesShortcutFavicon(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := NewServiceWithHTTPClient(database, server.Client())
-	shortcut, err := service.Create(context.Background(), "Site", server.URL+"/page", "")
+	shortcut, err := service.Create(context.Background(), "Site", server.URL+"/page", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,5 +96,19 @@ func TestServiceFetchesAndCachesShortcutFavicon(t *testing.T) {
 	}
 	if requests.Load() != 1 {
 		t.Fatalf("favicon was not cached, requests=%d", requests.Load())
+	}
+}
+
+func TestFaviconRedirectAllowsWWWAlias(t *testing.T) {
+	left, err := url.Parse("https://google.fr/favicon.ico")
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := url.Parse("https://www.google.fr/favicon.ico")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameHTTPOrigin(left, right) {
+		t.Fatal("expected www alias to be accepted for favicon redirects")
 	}
 }

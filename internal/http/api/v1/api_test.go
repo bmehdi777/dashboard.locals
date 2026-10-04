@@ -80,6 +80,29 @@ func TestShortcutsAPIProvidesCRUDAndUsageTracking(t *testing.T) {
 		t.Fatalf("unexpected shortcut: %+v", created)
 	}
 
+	createFolder := httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/api/v1/shortcut-folders", strings.NewReader(`{"name":"Documentation"}`))
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(createFolder, request)
+	if createFolder.Code != http.StatusCreated {
+		t.Fatalf("create folder status = %d body=%s", createFolder.Code, createFolder.Body.String())
+	}
+	var folder store.ShortcutFolder
+	if err := json.Unmarshal(createFolder.Body.Bytes(), &folder); err != nil {
+		t.Fatal(err)
+	}
+	if folder.ID == "" || folder.Name != "Documentation" {
+		t.Fatalf("unexpected folder: %+v", folder)
+	}
+
+	assign := httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPatch, "/api/v1/shortcuts/"+created.ID, strings.NewReader(`{"folderId":"`+folder.ID+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(assign, request)
+	if assign.Code != http.StatusOK || !strings.Contains(assign.Body.String(), `"folderId":"`+folder.ID+`"`) {
+		t.Fatalf("assign folder response = %d %s", assign.Code, assign.Body.String())
+	}
+
 	use := httptest.NewRecorder()
 	handler.ServeHTTP(use, httptest.NewRequest(http.MethodPost, "/api/v1/shortcuts/"+created.ID+"/use", nil))
 	if use.Code != http.StatusOK {
@@ -91,6 +114,20 @@ func TestShortcutsAPIProvidesCRUDAndUsageTracking(t *testing.T) {
 	}
 	if used.UsageCount != 1 || used.LastUsedAt == nil {
 		t.Fatalf("usage was not tracked: %+v", used)
+	}
+
+	reorder := httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPut, "/api/v1/shortcuts/order", strings.NewReader(`{"ids":["`+created.ID+`"]}`))
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(reorder, request)
+	if reorder.Code != http.StatusNoContent {
+		t.Fatalf("reorder status = %d body=%s", reorder.Code, reorder.Body.String())
+	}
+
+	removeFolder := httptest.NewRecorder()
+	handler.ServeHTTP(removeFolder, httptest.NewRequest(http.MethodDelete, "/api/v1/shortcut-folders/"+folder.ID, nil))
+	if removeFolder.Code != http.StatusNoContent {
+		t.Fatalf("delete folder status = %d body=%s", removeFolder.Code, removeFolder.Body.String())
 	}
 
 	update := httptest.NewRecorder()

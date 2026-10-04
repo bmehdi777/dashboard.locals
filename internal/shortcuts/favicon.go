@@ -106,7 +106,16 @@ func sameHTTPOrigin(left, right *url.URL) bool {
 	rightScheme := strings.ToLower(right.Scheme)
 	return (leftScheme == "http" || leftScheme == "https") &&
 		(leftScheme == rightScheme || (leftScheme == "http" && rightScheme == "https") || (leftScheme == "https" && rightScheme == "http")) &&
-		strings.EqualFold(left.Host, right.Host)
+		sameFaviconHost(left.Host, right.Host)
+}
+
+func sameFaviconHost(left, right string) bool {
+	left = strings.TrimSuffix(strings.ToLower(left), ".")
+	right = strings.TrimSuffix(strings.ToLower(right), ".")
+	if left == right {
+		return true
+	}
+	return strings.TrimPrefix(left, "www.") == strings.TrimPrefix(right, "www.")
 }
 
 func (f *faviconFetcher) get(key string) (faviconCacheEntry, bool) {

@@ -1,6 +1,8 @@
 package httpserver
 
 import (
+	"bytes"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,11 +12,18 @@ import (
 )
 
 func TestServerServesEmbeddedFrontendAndStructuredAPIErrors(t *testing.T) {
-	handler := NewHandler(Config{API: v1.Dependencies{Version: "test"}})
+	var accessLog bytes.Buffer
+	handler := NewHandler(Config{
+		API:          v1.Dependencies{Version: "test"},
+		AccessLogger: log.New(&accessLog, "", 0),
+	})
 	frontend := httptest.NewRecorder()
-	handler.ServeHTTP(frontend, httptest.NewRequest(http.MethodGet, "/dashboard", nil))
+	handler.ServeHTTP(frontend, httptest.NewRequest(http.MethodGet, "/dashboard?token=secret", nil))
 	if frontend.Code != http.StatusOK || !strings.Contains(frontend.Body.String(), "dashboard.locals") {
 		t.Fatalf("unexpected frontend response: %d %s", frontend.Code, frontend.Body.String())
+	}
+	if !strings.Contains(accessLog.String(), "method=GET path=/dashboard status=200") || strings.Contains(accessLog.String(), "secret") {
+		t.Fatalf("unsafe access log: %q", accessLog.String())
 	}
 
 	api := httptest.NewRecorder()

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Check, Edit3, FolderPlus, Globe2, Save, Trash2, X } from 'lucide-react'
+import { Check, Edit3, FolderPlus, Globe2, Palette, Save, Trash2, UserRound, X } from 'lucide-react'
 import { getErrorMessage } from '../../api'
 import type { EditorSettings, SearchRoot, SearchRootInput, SearchPreferences, Settings, StatsSettings } from '../../api'
 import { EmptyState } from '../../components/feedback/EmptyState'
@@ -13,6 +13,7 @@ import { Checkbox } from '../../components/ui/Checkbox'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Textarea } from '../../components/ui/Textarea'
+import { readAppearance, readUserName, saveAppearance, saveUserName, type AppearancePreferences } from '../../lib/userPreferences'
 import {
   useCreateRootMutation,
   useDeleteRootMutation,
@@ -54,7 +55,7 @@ export function SettingsPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="Configuration" title="Paramètres" description="Configurez vos racines de recherche et les préférences du dashboard." />
+      <PageHeader eyebrow="Configuration" title="Paramètres" description="Configurez vos racines de recherche, vos préférences et l’apparence du dashboard." />
       {settingsQuery.isLoading || rootsQuery.isLoading ? <LoadingState label="Chargement des paramètres…" /> : null}
       {settingsQuery.isError ? <ErrorState error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} /> : null}
       {rootsQuery.isError ? <ErrorState error={rootsQuery.error} onRetry={() => void rootsQuery.refetch()} title="Les racines sont indisponibles" /> : null}
@@ -76,6 +77,24 @@ function SettingsWorkspace({ settings, roots }: { settings: Settings; roots: Sea
   const [editingRootId, setEditingRootId] = useState<string | null>(null)
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
   const [rootMessage, setRootMessage] = useState<string | null>(null)
+  const [displayName, setDisplayName] = useState(readUserName)
+  const [displayNameMessage, setDisplayNameMessage] = useState<string | null>(null)
+  const [appearance, setAppearance] = useState<AppearancePreferences>(readAppearance)
+  const [appearanceMessage, setAppearanceMessage] = useState<string | null>(null)
+
+  function submitDisplayName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const savedName = saveUserName(displayName)
+    setDisplayName(savedName)
+    setDisplayNameMessage(savedName ? 'Le nom d’affichage a été enregistré dans ce navigateur.' : 'Le nom d’affichage a été réinitialisé.')
+  }
+
+  function submitAppearance(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const savedAppearance = saveAppearance(appearance)
+    setAppearance(savedAppearance)
+    setAppearanceMessage('L’apparence a été enregistrée dans ce navigateur.')
+  }
 
   function submitSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -140,6 +159,60 @@ function SettingsWorkspace({ settings, roots }: { settings: Settings; roots: Sea
 
   return (
     <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Personnalisation</CardTitle>
+          <CardDescription>Ce nom est enregistré uniquement dans le navigateur et sert à personnaliser le message d’accueil.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {displayNameMessage ? <Alert variant="success"><Check size={16} aria-hidden="true" /> {displayNameMessage}</Alert> : null}
+          <form className="profile-form" onSubmit={submitDisplayName}>
+            <div className="form-field">
+              <label htmlFor="display-name">Nom d’affichage</label>
+              <Input id="display-name" value={displayName} onChange={(event) => { setDisplayName(event.target.value); setDisplayNameMessage(null) }} placeholder="développeur" maxLength={80} />
+              <span className="field-hint">Visible dans « Bonjour, … » sur l’accueil.</span>
+            </div>
+            <div className="form-actions">
+              <Button type="submit"><UserRound size={16} aria-hidden="true" /> Enregistrer le nom</Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Apparence</CardTitle>
+          <CardDescription>Choisissez le mode d’affichage et la couleur principale de l’interface. Ces préférences restent dans ce navigateur.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {appearanceMessage ? <Alert variant="success"><Check size={16} aria-hidden="true" /> {appearanceMessage}</Alert> : null}
+          <form className="appearance-form" onSubmit={submitAppearance}>
+            <div className="form-grid form-grid-two">
+              <div className="form-field">
+                <label htmlFor="appearance-mode">Mode d’affichage</label>
+                <Select id="appearance-mode" value={appearance.mode} onChange={(event) => { setAppearance((current) => ({ ...current, mode: event.target.value as AppearancePreferences['mode'] })); setAppearanceMessage(null) }}>
+                  <option value="dark">Sombre</option>
+                  <option value="light">Clair</option>
+                </Select>
+              </div>
+              <div className="form-field">
+                <label htmlFor="appearance-color-theme">Thème de couleurs</label>
+                <Select id="appearance-color-theme" value={appearance.colorTheme} onChange={(event) => { setAppearance((current) => ({ ...current, colorTheme: event.target.value as AppearancePreferences['colorTheme'] })); setAppearanceMessage(null) }}>
+                  <option value="violet">Violet</option>
+                  <option value="blue">Bleu océan</option>
+                  <option value="green">Émeraude</option>
+                  <option value="orange">Ambre</option>
+                  <option value="rose">Rose</option>
+                </Select>
+              </div>
+            </div>
+            <div className="form-actions">
+              <Button type="submit"><Palette size={16} aria-hidden="true" /> Enregistrer l’apparence</Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Racines de recherche</CardTitle>

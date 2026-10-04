@@ -4,6 +4,8 @@ import {
   Activity,
   BrainCircuit,
   CalendarDays,
+  ChevronDown,
+  ChevronUp,
   Coins,
   DatabaseZap,
   RefreshCw,
@@ -33,6 +35,7 @@ export function StatsPage() {
   const [activeFilters, setActiveFilters] = useState<StatsFilters>(DEFAULT_STATS_FILTERS)
   const [draftFilters, setDraftFilters] = useState<StatsFilters>(DEFAULT_STATS_FILTERS)
   const [tools, setTools] = useState<StatsTools>(DEFAULT_STATS_FILTERS.tools ?? 'summary')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const statsQuery = useStatsQuery(activeFilters)
   const syncMutation = useMutation({
@@ -66,6 +69,7 @@ export function StatsPage() {
 
   const stats = statsQuery.data
   const summary = stats?.summary
+  const activeFilterCount = countActiveFilters(activeFilters)
 
   return (
     <div className="page-stack">
@@ -82,11 +86,27 @@ export function StatsPage() {
       />
 
       <Card className="filters-card">
-        <CardHeader>
-          <CardTitle>Filtres</CardTitle>
-          <CardDescription>Les données sont demandées au serveur avec ces paramètres.</CardDescription>
+        <CardHeader className={`filters-header${filtersOpen ? '' : ' filters-header-collapsed'}`}>
+          <div className="filters-header-main">
+            <CardTitle>Filtres</CardTitle>
+            <CardDescription>Les données sont demandées au serveur avec ces paramètres.</CardDescription>
+          </div>
+          <div className="filters-header-actions">
+            {activeFilterCount > 0 ? <span className="filters-active-count">{activeFilterCount} filtre(s) actif(s)</span> : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setFiltersOpen((open) => !open)}
+              aria-expanded={filtersOpen}
+              aria-controls="stats-filters-panel"
+            >
+              {filtersOpen ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
+              {filtersOpen ? 'Masquer les filtres' : 'Afficher les filtres'}
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent>
+        {filtersOpen ? <CardContent id="stats-filters-panel">
           <form className="filters-form" onSubmit={submitFilters}>
             <div className="form-field">
               <label htmlFor="stats-from">Du</label>
@@ -125,7 +145,7 @@ export function StatsPage() {
               <Button type="submit"><Activity size={16} aria-hidden="true" /> Appliquer</Button>
             </div>
           </form>
-        </CardContent>
+        </CardContent> : null}
       </Card>
 
       {syncMessage ? <Alert variant="success">{syncMessage}</Alert> : null}
@@ -177,4 +197,15 @@ export function StatsPage() {
       ) : null}
     </div>
   )
+}
+
+function countActiveFilters(filters: StatsFilters): number {
+  let count = 0
+  if (filters.from) count += 1
+  if (filters.to) count += 1
+  if (filters.project) count += 1
+  if (filters.timezone && filters.timezone !== DEFAULT_STATS_FILTERS.timezone) count += 1
+  if ((filters.granularity ?? DEFAULT_STATS_FILTERS.granularity) !== DEFAULT_STATS_FILTERS.granularity) count += 1
+  if ((filters.tools ?? DEFAULT_STATS_FILTERS.tools) !== DEFAULT_STATS_FILTERS.tools) count += 1
+  return count
 }

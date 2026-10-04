@@ -131,3 +131,57 @@ func TestShortcutsCanBeCreatedUpdatedAndTracked(t *testing.T) {
 		t.Fatalf("unexpected popular shortcuts: %+v, %v", popular, err)
 	}
 }
+
+func TestShortcutsCanBeReordered(t *testing.T) {
+	database, err := OpenInMemory("shortcut-order-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := database.CreateShortcut(context.Background(), Shortcut{Title: "First", URL: "https://example.com/first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := database.CreateShortcut(context.Background(), Shortcut{Title: "Second", URL: "https://example.com/second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := database.CreateShortcut(context.Background(), Shortcut{Title: "Third", URL: "https://example.com/third"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder, err := database.CreateShortcutFolder(context.Background(), ShortcutFolder{Name: "Documentation"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.ReorderShortcuts(context.Background(), []ShortcutOrder{
+		{ID: third.ID, FolderID: &folder.ID}, {ID: first.ID}, {ID: second.ID},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ordered, err := database.ListShortcuts(context.Background(), "custom", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ordered) != 3 || ordered[0].ID != third.ID || ordered[1].ID != first.ID || ordered[2].ID != second.ID {
+		t.Fatalf("unexpected custom shortcut order: %+v", ordered)
+	}
+	if ordered[0].FolderID == nil || *ordered[0].FolderID != folder.ID {
+		t.Fatalf("shortcut folder was not persisted: %+v", ordered[0])
+	}
+	if err := database.DeleteShortcutFolder(context.Background(), folder.ID); err != nil {
+		t.Fatal(err)
+	}
+	unassigned, err := database.GetShortcut(context.Background(), third.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unassigned.FolderID != nil {
+		t.Fatalf("shortcut remained assigned after folder deletion: %+v", unassigned)
+	}
+}

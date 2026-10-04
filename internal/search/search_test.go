@@ -85,6 +85,47 @@ func TestSearchParsesMatchesAndHonorsLimit(t *testing.T) {
 	}
 }
 
+func TestSearchByFileNameListsMatchingFiles(t *testing.T) {
+	rootPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rootPath, "docs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootPath, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootPath, "docs", "README.md"), []byte("# Documentation\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.OpenInMemory("search-filename-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	root, err := database.CreateSearchRoot(context.Background(), store.SearchRoot{Name: "root", Path: rootPath, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runnerFunc(func(_ context.Context, _ string, _ string, args []string) ([]byte, []byte, error) {
+		if len(args) < 2 || args[0] != "--files" || args[1] != "--null" {
+			t.Fatalf("unexpected filename search arguments: %v", args)
+		}
+		return []byte("main.go\x00docs/README.md\x00"), nil, nil
+	})
+	service := NewService(database, runner, 10, time.Second)
+	results, err := service.Search(context.Background(), root.ID, Options{
+		Query: "README", Target: SearchTargetFileName, Literal: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Path != "docs/README.md" || results[0].Line != 1 || results[0].Excerpt != "docs/README.md" {
+		t.Fatalf("unexpected filename results: %+v", results)
+	}
+}
+
 func TestSearchStreamEmitsMatchesBeforeRunnerCompletes(t *testing.T) {
 	rootPath := t.TempDir()
 	if err := os.WriteFile(filepath.Join(rootPath, "first.go"), []byte("package first\n"), 0o600); err != nil {

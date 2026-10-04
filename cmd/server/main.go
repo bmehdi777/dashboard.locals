@@ -15,6 +15,7 @@ import (
 	httpserver "dashboard.locals/internal/http"
 	"dashboard.locals/internal/http/api/v1"
 	"dashboard.locals/internal/launcher"
+	"dashboard.locals/internal/logging"
 	"dashboard.locals/internal/opencode"
 	"dashboard.locals/internal/search"
 	"dashboard.locals/internal/shortcuts"
@@ -25,14 +26,24 @@ import (
 const version = "dev"
 
 func main() {
-	logger := log.New(os.Stderr, "dashboard.locals: ", log.LstdFlags)
-	if err := run(logger); err != nil {
-		logger.Printf("server stopped: %v", err)
+	bootstrapLogger := log.New(os.Stderr, "dashboard.locals: ", log.LstdFlags)
+	logFiles, err := logging.Open()
+	if err != nil {
+		bootstrapLogger.Printf("open log files: %v", err)
+		os.Exit(1)
+	}
+	defer logFiles.Close()
+	if warning := logFiles.Warning(); warning != "" {
+		bootstrapLogger.Printf("%s", warning)
+		logFiles.Error.Printf("%s", warning)
+	}
+	if err := run(logFiles.Error, logFiles.Access); err != nil {
+		logFiles.Error.Printf("server stopped: %v", err)
 		os.Exit(1)
 	}
 }
 
-func run(logger *log.Logger) error {
+func run(logger, accessLogger *log.Logger) error {
 	runtimeConfig, err := config.LoadRuntime()
 	if err != nil {
 		return err
@@ -90,7 +101,8 @@ func run(logger *log.Logger) error {
 			OpenCode:  detector,
 			Version:   version,
 		},
-		Logger: logger,
+		Logger:       logger,
+		AccessLogger: accessLogger,
 	})
 	server := httpserver.New(runtimeConfig.ListenAddr, handler, runtimeConfig.HTTPReadTimeout, runtimeConfig.HTTPWriteTimeout, runtimeConfig.HTTPIdleTimeout)
 

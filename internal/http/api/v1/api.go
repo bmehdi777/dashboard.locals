@@ -49,8 +49,11 @@ func NewHandler(dependencies Dependencies) *Handler {
 	handler.mux.HandleFunc("/api/v1/settings", handler.settings)
 	handler.mux.HandleFunc("/api/v1/shortcuts/{shortcutID}/favicon", handler.shortcutFavicon)
 	handler.mux.HandleFunc("/api/v1/shortcuts/{shortcutID}/use", handler.useShortcut)
+	handler.mux.HandleFunc("/api/v1/shortcuts/order", handler.reorderShortcuts)
 	handler.mux.HandleFunc("/api/v1/shortcuts/{shortcutID}", handler.shortcut)
 	handler.mux.HandleFunc("/api/v1/shortcuts", handler.shortcuts)
+	handler.mux.HandleFunc("/api/v1/shortcut-folders/{folderID}", handler.shortcutFolder)
+	handler.mux.HandleFunc("/api/v1/shortcut-folders", handler.shortcutFolders)
 	handler.mux.HandleFunc("/api/v1/search-roots", handler.searchRoots)
 	handler.mux.HandleFunc("/api/v1/search-roots/{rootID}", handler.searchRoot)
 	handler.mux.HandleFunc("/api/v1/search/stream", handler.searchStream)
@@ -218,19 +221,43 @@ func (p SettingsPatch) Apply(settings *config.Settings) error {
 }
 
 type CreateShortcutRequest struct {
-	Title       string `json:"title"`
-	URL         string `json:"url"`
-	Description string `json:"description"`
+	Title       string  `json:"title"`
+	URL         string  `json:"url"`
+	Description string  `json:"description"`
+	FolderID    *string `json:"folderId"`
 }
 
 type UpdateShortcutRequest struct {
 	Title       *string `json:"title"`
 	URL         *string `json:"url"`
 	Description *string `json:"description"`
+	FolderID    *string `json:"folderId"`
+}
+
+type ReorderShortcutsRequest struct {
+	IDs   []string                 `json:"ids"`
+	Items []reorderShortcutRequest `json:"items"`
+}
+
+type reorderShortcutRequest struct {
+	ID       string  `json:"id"`
+	FolderID *string `json:"folderId"`
+}
+
+type CreateShortcutFolderRequest struct {
+	Name string `json:"name"`
+}
+
+type UpdateShortcutFolderRequest struct {
+	Name string `json:"name"`
 }
 
 type shortcutsResponse struct {
 	Data []store.Shortcut `json:"data"`
+}
+
+type shortcutFoldersResponse struct {
+	Data []store.ShortcutFolder `json:"data"`
 }
 
 func (h *Handler) shortcuts(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +291,7 @@ func (h *Handler) shortcuts(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSON(w, r, &request) {
 			return
 		}
-		shortcut, err := h.dependencies.Shortcuts.Create(r.Context(), request.Title, request.URL, request.Description)
+		shortcut, err := h.dependencies.Shortcuts.Create(r.Context(), request.Title, request.URL, request.Description, request.FolderID)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -287,7 +314,7 @@ func (h *Handler) shortcut(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSON(w, r, &request) {
 			return
 		}
-		shortcut, err := h.dependencies.Shortcuts.Update(r.Context(), id, request.Title, request.URL, request.Description)
+		shortcut, err := h.dependencies.Shortcuts.Update(r.Context(), id, request.Title, request.URL, request.Description, request.FolderID)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -295,6 +322,102 @@ func (h *Handler) shortcut(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, shortcut)
 	case http.MethodDelete:
 		if err := h.dependencies.Shortcuts.Delete(r.Context(), id); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		methodNotAllowed(w, http.MethodPatch, http.MethodDelete)
+	}
+}
+
+func (h *Handler) reorderShortcuts(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPut) {
+		return
+	}
+	if h.dependencies.Shortcuts == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "shortcut service is unavailable")
+		return
+	}
+	var request ReorderShortcutsRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	order := make([]store.ShortcutOrder, 0, len(request.Items)+len(request.IDs))
+	if len(request.Items) > 0 {
+		for _, item := range request.Items {
+			order = append(order, store.ShortcutOrder{ID: item.ID, FolderID: item.FolderID})
+		}
+	} else {
+		current, err := h.dependencies.Shortcuts.List(r.Context(), "custom", 0)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		foldersByID := make(map[string]*string, len(current))
+		for _, shortcut := range current {
+			foldersByID[shortcut.ID] = shortcut.FolderID
+		}
+		for _, id := range request.IDs {
+			order = append(order, store.ShortcutOrder{ID: id, FolderID: foldersByID[id]})
+		}
+	}
+	if err := h.dependencies.Shortcuts.Reorder(r.Context(), order); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) shortcutFolders(w http.ResponseWriter, r *http.Request) {
+	if h.dependencies.Shortcuts == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "shortcut service is unavailable")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		folders, err := h.dependencies.Shortcuts.ListFolders(r.Context())
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, shortcutFoldersResponse{Data: folders})
+	case http.MethodPost:
+		var request CreateShortcutFolderRequest
+		if !decodeJSON(w, r, &request) {
+			return
+		}
+		folder, err := h.dependencies.Shortcuts.CreateFolder(r.Context(), request.Name)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, folder)
+	default:
+		methodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (h *Handler) shortcutFolder(w http.ResponseWriter, r *http.Request) {
+	if h.dependencies.Shortcuts == nil {
+		writeError(w, http.StatusInternalServerError, "server_not_configured", "shortcut service is unavailable")
+		return
+	}
+	id := r.PathValue("folderID")
+	switch r.Method {
+	case http.MethodPatch:
+		var request UpdateShortcutFolderRequest
+		if !decodeJSON(w, r, &request) {
+			return
+		}
+		folder, err := h.dependencies.Shortcuts.UpdateFolder(r.Context(), id, request.Name)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, folder)
+	case http.MethodDelete:
+		if err := h.dependencies.Shortcuts.DeleteFolder(r.Context(), id); err != nil {
 			writeServiceError(w, err)
 			return
 		}
@@ -420,13 +543,14 @@ func (h *Handler) searchRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 type SearchRequest struct {
-	RootID           string `json:"rootId"`
-	Query            string `json:"query"`
-	Literal          *bool  `json:"literal"`
-	RespectGitignore *bool  `json:"respectGitignore"`
-	IncludeBinary    *bool  `json:"includeBinary"`
-	MaxResults       *int   `json:"maxResults"`
-	TimeoutMS        *int   `json:"timeoutMs"`
+	RootID           string  `json:"rootId"`
+	Query            string  `json:"query"`
+	SearchIn         *string `json:"searchIn"`
+	Literal          *bool   `json:"literal"`
+	RespectGitignore *bool   `json:"respectGitignore"`
+	IncludeBinary    *bool   `json:"includeBinary"`
+	MaxResults       *int    `json:"maxResults"`
+	TimeoutMS        *int    `json:"timeoutMs"`
 }
 
 type SearchResponse struct {
@@ -471,6 +595,12 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 		IncludeBinary:    settings.Search.IncludeBinary,
 		MaxResults:       settings.Search.MaxResults, Timeout: settings.Search.Timeout,
 	}
+	target, targetErr := parseSearchTarget(request.SearchIn)
+	if targetErr != nil {
+		writeServiceError(w, targetErr)
+		return
+	}
+	options.Target = target
 	if request.Literal != nil {
 		options.Literal = *request.Literal
 	}
@@ -526,6 +656,12 @@ func (h *Handler) searchStream(w http.ResponseWriter, r *http.Request) {
 		IncludeBinary:    settings.Search.IncludeBinary,
 		MaxResults:       settings.Search.MaxResults, Timeout: settings.Search.Timeout,
 	}
+	target, targetErr := parseSearchTarget(request.SearchIn)
+	if targetErr != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "searchIn must be content or filename")
+		return
+	}
+	options.Target = target
 	if request.Literal != nil {
 		options.Literal = *request.Literal
 	}
@@ -596,11 +732,19 @@ func (h *Handler) recordSearchHistory(ctx context.Context, request SearchRequest
 	}
 	_, err := h.dependencies.History.Record(ctx, store.SearchHistory{
 		RootID: request.RootID, RootName: rootName, Query: request.Query,
-		Literal: options.Literal, RespectGitignore: options.RespectGitignore,
+		SearchIn: string(options.Target),
+		Literal:  options.Literal, RespectGitignore: options.RespectGitignore,
 		IncludeBinary: options.IncludeBinary, ResultCount: resultCount,
 		Truncated: truncated, Status: "completed",
 	})
 	return err
+}
+
+func parseSearchTarget(value *string) (search.SearchTarget, error) {
+	if value == nil {
+		return search.SearchTargetContent, nil
+	}
+	return search.ParseSearchTarget(*value)
 }
 
 func (h *Handler) searchHistory(w http.ResponseWriter, r *http.Request) {
@@ -899,7 +1043,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 
 func classifyError(err error) (int, string, string) {
 	switch {
-	case errors.Is(err, search.ErrInvalidQuery), errors.Is(err, search.ErrInvalidRoot), errors.Is(err, search.ErrPathOutside), errors.Is(err, search.ErrSymlink):
+	case errors.Is(err, search.ErrInvalidQuery), errors.Is(err, search.ErrInvalidSearchTarget), errors.Is(err, search.ErrInvalidRoot), errors.Is(err, search.ErrPathOutside), errors.Is(err, search.ErrSymlink):
 		return http.StatusBadRequest, "invalid_request", "request validation failed"
 	case errors.Is(err, shortcuts.ErrInvalidShortcut):
 		return http.StatusBadRequest, "invalid_shortcut", "shortcut validation failed"

@@ -1,8 +1,8 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Clipboard, ExternalLink, FileSearch, History, LoaderCircle, Repeat2, Search as SearchIcon, Trash2, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Clipboard, ExternalLink, FileSearch, History, LoaderCircle, Repeat2, Search as SearchIcon, Trash2, X } from 'lucide-react'
 import { getErrorMessage, searchApi } from '../../api'
-import type { SearchHistoryEntry, SearchRequest, SearchRoot, SearchPreferences, SearchStreamDoneEvent, SearchStreamEvent, SearchResult } from '../../api'
+import type { SearchHistoryEntry, SearchRequest, SearchRoot, SearchPreferences, SearchScope, SearchStreamDoneEvent, SearchStreamEvent, SearchResult } from '../../api'
 import { EmptyState } from '../../components/feedback/EmptyState'
 import { ErrorState } from '../../components/feedback/ErrorState'
 import { LoadingState } from '../../components/feedback/LoadingState'
@@ -23,6 +23,8 @@ import {
   useSettingsQuery,
 } from '../shared/hooks'
 
+const SEARCH_PAGE_SIZE = 25
+
 export function SearchPage() {
   const rootsQuery = useRootsQuery()
   const settingsQuery = useSettingsQuery()
@@ -33,7 +35,7 @@ export function SearchPage() {
       <PageHeader
         eyebrow="Code local"
         title="Recherche"
-        description="Retrouvez rapidement une occurrence dans vos racines de code configurées."
+        description="Recherchez dans le contenu ou le nom des fichiers de vos racines de code configurées."
       />
 
       {rootsQuery.isError ? <ErrorState error={rootsQuery.error} onRetry={() => void rootsQuery.refetch()} /> : null}
@@ -67,6 +69,7 @@ function SearchWorkspace({
 }) {
   const [rootId, setRootId] = useState(preferences?.defaultRootId ?? roots[0]?.id ?? '')
   const [query, setQuery] = useState('')
+  const [searchIn, setSearchIn] = useState<SearchScope>('content')
   const [respectGitignore, setRespectGitignore] = useState(preferences?.respectGitignore ?? true)
   const [ignoreBinary, setIgnoreBinary] = useState(preferences?.ignoreBinary ?? true)
   const [literal, setLiteral] = useState(preferences?.literal ?? false)
@@ -74,6 +77,7 @@ function SearchWorkspace({
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [streamResults, setStreamResults] = useState<SearchResult[]>([])
   const [streamSummary, setStreamSummary] = useState<SearchStreamDoneEvent | null>(null)
+  const [resultPage, setResultPage] = useState(1)
   const queryClient = useQueryClient()
   const abortController = useRef<AbortController | null>(null)
   const lastRequest = useRef<SearchRequest | null>(null)
@@ -110,6 +114,7 @@ function SearchWorkspace({
     const controller = new AbortController()
     abortController.current = controller
     lastRequest.current = request
+    setResultPage(1)
     searchMutation.mutate({ request, signal: controller.signal })
   }
 
@@ -122,6 +127,7 @@ function SearchWorkspace({
     runSearch({
       rootId,
       query: trimmedQuery,
+      searchIn,
       respectGitignore,
       ignoreBinary,
       literal,
@@ -153,6 +159,7 @@ function SearchWorkspace({
   function repeatHistory(entry: SearchHistoryEntry) {
     setRootId(entry.rootId)
     setQuery(entry.query)
+    setSearchIn(entry.searchIn ?? 'content')
     setRespectGitignore(entry.respectGitignore)
     setIgnoreBinary(!entry.includeBinary)
     setLiteral(entry.literal)
@@ -173,13 +180,20 @@ function SearchWorkspace({
   const hasCompletedEmptySearch = Boolean(
     streamSummary && streamResults.length === 0 && !searchMutation.isPending,
   )
+  const resultPageCount = Math.max(1, Math.ceil(streamResults.length / SEARCH_PAGE_SIZE))
+  const currentResultPage = Math.min(resultPage, resultPageCount)
+  const firstVisibleResult = (currentResultPage - 1) * SEARCH_PAGE_SIZE
+  const visibleResults = streamResults.slice(firstVisibleResult, firstVisibleResult + SEARCH_PAGE_SIZE)
+  const firstResultNumber = firstVisibleResult + 1
+  const lastResultNumber = Math.min(firstVisibleResult + SEARCH_PAGE_SIZE, streamResults.length)
+  const resultNoun = searchIn === 'filename' ? 'fichier(s)' : 'occurrence(s)'
 
   return (
     <>
       <Card className="search-card">
         <CardHeader>
           <CardTitle>Nouvelle recherche</CardTitle>
-          <CardDescription>La recherche est exécutée par le serveur local et reste limitée à la racine sélectionnée.</CardDescription>
+           <CardDescription>Choisissez si le motif doit être recherché dans le contenu ou le nom des fichiers de la racine sélectionnée.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="search-form" onSubmit={submitSearch}>
@@ -197,6 +211,13 @@ function SearchWorkspace({
                 {roots.map((root) => <option value={root.id} key={root.id}>{root.name}</option>)}
               </Select>
               {rootId ? <span className="field-hint">{roots.find((root) => root.id === rootId)?.path}</span> : null}
+            </div>
+            <div className="form-field">
+              <label htmlFor="search-in">Rechercher dans</label>
+              <Select id="search-in" value={searchIn} onChange={(event) => setSearchIn(event.target.value as SearchScope)}>
+                <option value="content">Contenu des fichiers</option>
+                <option value="filename">Nom du fichier (titre)</option>
+              </Select>
             </div>
             <div className="search-options" aria-label="Options de recherche">
               <label className="checkbox-label">
@@ -250,6 +271,7 @@ function SearchWorkspace({
                     </div>
                     <div className="history-meta">
                       <span>{formatDate(entry.createdAt)}</span>
+                      <span>{entry.searchIn === 'filename' ? 'Nom du fichier' : 'Contenu'}</span>
                       <span>{formatNumber(entry.resultCount)} résultat(s)</span>
                       {entry.truncated ? <span className="history-limited">Limité</span> : null}
                     </div>
@@ -275,13 +297,19 @@ function SearchWorkspace({
         <div className="stream-progress" role="status" aria-live="polite">
           <LoaderCircle className="spin" size={18} aria-hidden="true" />
           <span>Recherche en cours…</span>
-          <strong>{streamResults.length} résultat(s) reçu(s)</strong>
+          <strong>{streamResults.length} {resultNoun} reçu(s)</strong>
         </div>
       ) : null}
       {searchMutation.isError && !isAbortError ? <ErrorState error={searchMutation.error} onRetry={() => { if (lastRequest.current) runSearch(lastRequest.current) }} title="La recherche a échoué" /> : null}
 
       {hasCompletedEmptySearch ? (
-        <EmptyState icon={<SearchIcon size={25} aria-hidden="true" />} title="Aucun résultat" description="Aucune occurrence ne correspond à ce motif dans la racine sélectionnée." />
+        <EmptyState
+          icon={<SearchIcon size={25} aria-hidden="true" />}
+          title="Aucun résultat"
+          description={searchIn === 'filename'
+            ? 'Aucun nom de fichier ne correspond à ce motif dans la racine sélectionnée.'
+            : 'Aucune occurrence ne correspond à ce motif dans la racine sélectionnée.'}
+        />
       ) : null}
 
       {streamResults.length > 0 ? (
@@ -290,16 +318,17 @@ function SearchWorkspace({
             <div>
               <CardTitle>Résultats</CardTitle>
               <CardDescription>
-                {streamSummary?.count ?? streamResults.length} occurrence(s) reçue(s)
+                {streamSummary?.count ?? streamResults.length} {resultNoun} trouvé(s)
                 {searchMutation.isPending ? ' — recherche en cours…' : ''}
                 {streamSummary?.truncated ? ' — affichage limité' : ''}
+                {!searchMutation.isPending && streamResults.length > 0 && resultPageCount > 1 ? ` — affichage ${firstResultNumber}–${lastResultNumber}` : ''}
               </CardDescription>
             </div>
             {searchMutation.isPending ? <span className="muted-text">Flux actif</span> : null}
           </CardHeader>
           <CardContent className="results-content">
             <div className="result-list" role="list">
-              {streamResults.map((result) => {
+              {visibleResults.map((result) => {
                 const resultId = result.id ?? `${result.path}:${result.line}`
                 return (
                   <article className="result-item" key={resultId} role="listitem">
@@ -323,6 +352,33 @@ function SearchWorkspace({
                 )
               })}
             </div>
+            {!searchMutation.isPending && resultPageCount > 1 ? (
+              <nav className="results-pagination" aria-label="Pagination des résultats">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResultPage((page) => Math.max(1, page - 1))}
+                  disabled={currentResultPage === 1}
+                  aria-label="Page précédente"
+                >
+                  <ChevronLeft size={15} aria-hidden="true" />
+                  <span>Précédent</span>
+                </Button>
+                <span className="results-page-status" aria-live="polite">
+                  Page {currentResultPage} sur {resultPageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResultPage((page) => Math.min(resultPageCount, page + 1))}
+                  disabled={currentResultPage === resultPageCount}
+                  aria-label="Page suivante"
+                >
+                  <span>Suivant</span>
+                  <ChevronRight size={15} aria-hidden="true" />
+                </Button>
+              </nav>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
