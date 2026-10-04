@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { healthApi, searchRootsApi, settingsApi, statsApi } from '../../api'
-import type { SearchRootInput, SettingsPatch, StatsFilters } from '../../api'
+import type { SearchRoot, SearchRootInput, SettingsPatch, StatsFilters } from '../../api'
 
 export const queryKeys = {
   health: ['health'] as const,
@@ -28,10 +28,10 @@ export function useSettingsQuery() {
   })
 }
 
-export function useRootsQuery() {
+export function useRootsQuery(includeDisabled = true) {
   return useQuery({
-    queryKey: queryKeys.roots,
-    queryFn: searchRootsApi.list,
+    queryKey: [...queryKeys.roots, includeDisabled] as const,
+    queryFn: () => searchRootsApi.list(includeDisabled),
     retry: false,
     staleTime: 30_000,
   })
@@ -61,7 +61,11 @@ export function useCreateRootMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (root: SearchRootInput) => searchRootsApi.create(root),
-    onSuccess: () => {
+    onSuccess: (root) => {
+      queryClient.setQueriesData<SearchRoot[]>({ queryKey: queryKeys.roots }, (current) => {
+        if (!current || current.some((item) => item.id === root.id)) return current
+        return [...current, root].sort((left, right) => left.name.localeCompare(right.name))
+      })
       void queryClient.invalidateQueries({ queryKey: queryKeys.roots })
     },
   })
@@ -72,7 +76,10 @@ export function useUpdateRootMutation() {
   return useMutation({
     mutationFn: ({ id, root }: { id: string; root: Partial<SearchRootInput> }) =>
       searchRootsApi.update(id, root),
-    onSuccess: () => {
+    onSuccess: (root) => {
+      queryClient.setQueriesData<SearchRoot[]>({ queryKey: queryKeys.roots }, (current) =>
+        current?.map((item) => (item.id === root.id ? root : item)),
+      )
       void queryClient.invalidateQueries({ queryKey: queryKeys.roots })
     },
   })
@@ -82,7 +89,10 @@ export function useDeleteRootMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => searchRootsApi.remove(id),
-    onSuccess: () => {
+    onSuccess: (_result, id) => {
+      queryClient.setQueriesData<SearchRoot[]>({ queryKey: queryKeys.roots }, (current) =>
+        current?.filter((item) => item.id !== id),
+      )
       void queryClient.invalidateQueries({ queryKey: queryKeys.roots })
     },
   })

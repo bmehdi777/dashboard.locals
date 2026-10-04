@@ -1,1 +1,0 @@
-import{O as e,T as t,b as n,j as r,m as i}from"./index-BB26oZZf.js";var a={name:`check`,size:24,node:[[`path`,{d:`M20 6 9 17l-5-5`,key:`1gmf2c`}]]};a.node;var o=t(a),s=r(e(),1),c=n(),l=(0,s.forwardRef)(function({className:e,type:t=`checkbox`,...n},r){return(0,c.jsx)(`input`,{ref:r,type:t,className:i(`checkbox`,e),...n})});export{o as n,l as t};

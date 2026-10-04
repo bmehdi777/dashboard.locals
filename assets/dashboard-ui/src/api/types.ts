@@ -3,6 +3,7 @@ export type HealthState = 'ok' | 'degraded' | 'error' | 'unknown'
 export type OpenCodeState =
   | 'available'
   | 'missing'
+  | 'absent'
   | 'stopped'
   | 'incompatible'
   | 'unauthenticated'
@@ -35,8 +36,10 @@ export interface SearchPreferences {
   defaultRootId?: string
   respectGitignore: boolean
   ignoreBinary: boolean
+  literal?: boolean
   maxResults?: number
   contextLines?: number
+  timeout?: string
 }
 
 export interface EditorSettings {
@@ -48,22 +51,22 @@ export interface EditorSettings {
 
 export interface OpenCodeSettings {
   enabled: boolean
-  endpoint?: string
-  project?: string
-  timezone?: string
+  serviceFile?: string
 }
 
-export interface SyncSettings {
-  enabled: boolean
-  intervalMinutes?: number
-  defaultGranularity?: 'daily' | 'monthly'
+export type StatsTools = 'none' | 'summary' | 'detail'
+
+export interface StatsSettings {
+  timezone: string
+  tools: StatsTools
+  granularity: 'daily' | 'monthly'
 }
 
 export interface Settings {
   search: SearchPreferences
   editor: EditorSettings
   opencode: OpenCodeSettings
-  sync: SyncSettings
+  stats: StatsSettings
 }
 
 export type SettingsPatch = Partial<Settings>
@@ -79,8 +82,10 @@ export interface SearchRequest {
   query: string
   respectGitignore: boolean
   ignoreBinary: boolean
+  literal?: boolean
   maxResults?: number
   contextLines?: number
+  timeoutMs?: number
 }
 
 export interface SearchResult {
@@ -116,7 +121,7 @@ export interface StatsFilters {
   to?: string
   project?: string
   timezone?: string
-  tools?: string[]
+  tools?: StatsTools
   granularity?: 'daily' | 'monthly'
 }
 
@@ -169,4 +174,8 @@ export interface StatsSyncResponse {
   synced: boolean
   records?: number
   message?: string
+  rawCreated?: number
+  rawExisting?: number
+  aggregatesCreated?: number
+  aggregatesUpdated?: number
 }

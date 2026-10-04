@@ -61,6 +61,7 @@ function SearchWorkspace({
   const [query, setQuery] = useState('')
   const [respectGitignore, setRespectGitignore] = useState(preferences?.respectGitignore ?? true)
   const [ignoreBinary, setIgnoreBinary] = useState(preferences?.ignoreBinary ?? true)
+  const [literal, setLiteral] = useState(preferences?.literal ?? false)
   const [copiedPath, setCopiedPath] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const abortController = useRef<AbortController | null>(null)
@@ -96,6 +97,7 @@ function SearchWorkspace({
       query: trimmedQuery,
       respectGitignore,
       ignoreBinary,
+      literal,
       maxResults: preferences?.maxResults ?? 500,
       contextLines: preferences?.contextLines ?? 0,
     })
@@ -156,6 +158,10 @@ function SearchWorkspace({
               <label className="checkbox-label">
                 <Checkbox checked={ignoreBinary} onChange={(event) => setIgnoreBinary(event.target.checked)} />
                 <span>Ignorer les fichiers binaires</span>
+              </label>
+              <label className="checkbox-label">
+                <Checkbox checked={literal} onChange={(event) => setLiteral(event.target.checked)} />
+                <span>Recherche littérale</span>
               </label>
             </div>
             <div className="form-actions">

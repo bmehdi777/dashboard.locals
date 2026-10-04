@@ -12,7 +12,7 @@ import {
   Workflow,
 } from 'lucide-react'
 import { getErrorMessage, statsApi } from '../../api'
-import type { StatsFilters } from '../../api'
+import type { StatsFilters, StatsTools } from '../../api'
 import { ActivityChart } from '../../components/stats/ActivityChart'
 import { ModelBreakdown, ToolBreakdown } from '../../components/stats/BreakdownList'
 import { MetricCard } from '../../components/stats/MetricCard'
@@ -32,13 +32,16 @@ export function StatsPage() {
   const queryClient = useQueryClient()
   const [activeFilters, setActiveFilters] = useState<StatsFilters>(DEFAULT_STATS_FILTERS)
   const [draftFilters, setDraftFilters] = useState<StatsFilters>(DEFAULT_STATS_FILTERS)
-  const [tools, setTools] = useState('')
+  const [tools, setTools] = useState<StatsTools>(DEFAULT_STATS_FILTERS.tools ?? 'summary')
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const statsQuery = useStatsQuery(activeFilters)
   const syncMutation = useMutation({
     mutationFn: statsApi.sync,
     onSuccess: (response) => {
-      setSyncMessage(response.message ?? `${response.records ?? 0} enregistrement(s) synchronisé(s).`)
+      setSyncMessage(
+        response.message ??
+          `${response.rawCreated ?? response.records ?? 0} nouvel(le)(s) donnée(s) synchronisée(s).`,
+      )
       void queryClient.invalidateQueries({ queryKey: ['stats'] })
     },
   })
@@ -51,14 +54,14 @@ export function StatsPage() {
     event.preventDefault()
     setActiveFilters({
       ...draftFilters,
-      tools: tools.split(',').map((tool) => tool.trim()).filter(Boolean),
+      tools,
     })
   }
 
   function resetFilters() {
     setDraftFilters(DEFAULT_STATS_FILTERS)
     setActiveFilters(DEFAULT_STATS_FILTERS)
-    setTools('')
+    setTools(DEFAULT_STATS_FILTERS.tools ?? 'summary')
   }
 
   const stats = statsQuery.data
@@ -71,7 +74,7 @@ export function StatsPage() {
         title="Statistiques"
         description="Analysez l’activité OpenCode conservée par le serveur local."
         actions={
-          <Button onClick={() => { setSyncMessage(null); syncMutation.mutate() }} disabled={syncMutation.isPending}>
+          <Button onClick={() => { setSyncMessage(null); syncMutation.mutate(activeFilters) }} disabled={syncMutation.isPending}>
             <RefreshCw className={syncMutation.isPending ? 'spin' : undefined} size={16} aria-hidden="true" />
             {syncMutation.isPending ? 'Synchronisation…' : 'Synchroniser'}
           </Button>
@@ -111,7 +114,11 @@ export function StatsPage() {
             </div>
             <div className="form-field">
               <label htmlFor="stats-tools">Outils</label>
-              <Input id="stats-tools" value={tools} onChange={(event) => setTools(event.target.value)} placeholder="bash, edit, glob…" />
+              <Select id="stats-tools" value={tools} onChange={(event) => setTools(event.target.value as StatsTools)}>
+                <option value="none">Aucun détail</option>
+                <option value="summary">Résumé</option>
+                <option value="detail">Détail</option>
+              </Select>
             </div>
             <div className="filters-actions">
               <Button type="button" variant="ghost" onClick={resetFilters}>Réinitialiser</Button>

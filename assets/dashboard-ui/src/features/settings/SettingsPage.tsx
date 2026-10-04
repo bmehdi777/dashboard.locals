@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Check, Edit3, FolderPlus, Globe2, Save, Trash2, X } from 'lucide-react'
 import { getErrorMessage } from '../../api'
-import type { EditorSettings, SearchRoot, SearchRootInput, SearchPreferences, Settings, SyncSettings } from '../../api'
+import type { EditorSettings, SearchRoot, SearchRootInput, SearchPreferences, Settings, StatsSettings } from '../../api'
 import { EmptyState } from '../../components/feedback/EmptyState'
 import { ErrorState } from '../../components/feedback/ErrorState'
 import { LoadingState } from '../../components/feedback/LoadingState'
@@ -25,8 +25,8 @@ import {
 const defaultSearch: SearchPreferences = {
   respectGitignore: true,
   ignoreBinary: true,
+  literal: false,
   maxResults: 500,
-  contextLines: 0,
 }
 
 const defaultEditor: EditorSettings = {
@@ -36,10 +36,10 @@ const defaultEditor: EditorSettings = {
   placeholders: [],
 }
 
-const defaultSync: SyncSettings = {
-  enabled: true,
-  intervalMinutes: 60,
-  defaultGranularity: 'daily',
+const defaultStats: StatsSettings = {
+  timezone: 'UTC',
+  tools: 'summary',
+  granularity: 'daily',
 }
 
 const defaultRoot: SearchRootInput = {
@@ -71,7 +71,7 @@ function SettingsWorkspace({ settings, roots }: { settings: Settings; roots: Sea
   const [search, setSearch] = useState<SearchPreferences>(settings.search ?? defaultSearch)
   const [editor, setEditor] = useState<EditorSettings>(settings.editor ?? defaultEditor)
   const [opencodeEnabled, setOpencodeEnabled] = useState(settings.opencode?.enabled ?? true)
-  const [sync, setSync] = useState<SyncSettings>(settings.sync ?? defaultSync)
+  const [stats, setStats] = useState<StatsSettings>(settings.stats ?? defaultStats)
   const [rootForm, setRootForm] = useState<SearchRootInput>(defaultRoot)
   const [editingRootId, setEditingRootId] = useState<string | null>(null)
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
@@ -84,8 +84,8 @@ function SettingsWorkspace({ settings, roots }: { settings: Settings; roots: Sea
       {
         search,
         editor,
-        opencode: { ...settings.opencode, enabled: opencodeEnabled },
-        sync,
+        opencode: { enabled: opencodeEnabled },
+        stats,
       },
       { onSuccess: () => setSettingsMessage('Les préférences ont été enregistrées.') },
     )
@@ -179,9 +179,9 @@ function SettingsWorkspace({ settings, roots }: { settings: Settings; roots: Sea
           <CardContent className="settings-section-content">
             <label className="checkbox-label"><Checkbox checked={search.respectGitignore} onChange={(event) => setSearch((current) => ({ ...current, respectGitignore: event.target.checked }))} /><span>Respecter les fichiers .gitignore par défaut</span></label>
             <label className="checkbox-label"><Checkbox checked={search.ignoreBinary} onChange={(event) => setSearch((current) => ({ ...current, ignoreBinary: event.target.checked }))} /><span>Ignorer les fichiers binaires par défaut</span></label>
+            <label className="checkbox-label"><Checkbox checked={search.literal ?? false} onChange={(event) => setSearch((current) => ({ ...current, literal: event.target.checked }))} /><span>Rechercher le texte littéralement par défaut</span></label>
             <div className="form-grid form-grid-two">
               <div className="form-field"><label htmlFor="max-results">Limite de résultats</label><Input id="max-results" type="number" min="1" max="10000" value={search.maxResults ?? ''} onChange={(event) => setSearch((current) => ({ ...current, maxResults: Number(event.target.value) || undefined }))} /></div>
-              <div className="form-field"><label htmlFor="context-lines">Lignes de contexte</label><Input id="context-lines" type="number" min="0" max="20" value={search.contextLines ?? ''} onChange={(event) => setSearch((current) => ({ ...current, contextLines: Number(event.target.value) || 0 }))} /></div>
             </div>
           </CardContent>
         </Card>
@@ -198,13 +198,13 @@ function SettingsWorkspace({ settings, roots }: { settings: Settings; roots: Sea
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>OpenCode et synchronisation</CardTitle><CardDescription>L’absence d’OpenCode ne bloque pas le reste du dashboard. Aucun credential n’est affiché ici.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>OpenCode et statistiques</CardTitle><CardDescription>L’absence d’OpenCode ne bloque pas le reste du dashboard. Aucun credential n’est affiché ici.</CardDescription></CardHeader>
           <CardContent className="settings-section-content">
             <label className="checkbox-label"><Checkbox checked={opencodeEnabled} onChange={(event) => setOpencodeEnabled(event.target.checked)} /><span>Activer la détection et la synchronisation OpenCode</span></label>
             <div className="form-grid form-grid-three">
-              <div className="form-field"><label htmlFor="sync-interval">Intervalle (minutes)</label><Input id="sync-interval" type="number" min="1" value={sync.intervalMinutes ?? ''} onChange={(event) => setSync((current) => ({ ...current, intervalMinutes: Number(event.target.value) || undefined }))} /></div>
-              <div className="form-field"><label htmlFor="sync-granularity">Granularité par défaut</label><Select id="sync-granularity" value={sync.defaultGranularity ?? 'daily'} onChange={(event) => setSync((current) => ({ ...current, defaultGranularity: event.target.value as 'daily' | 'monthly' }))}><option value="daily">Journalière</option><option value="monthly">Mensuelle</option></Select></div>
-              <label className="checkbox-label root-enabled"><Checkbox checked={sync.enabled} onChange={(event) => setSync((current) => ({ ...current, enabled: event.target.checked }))} /><span>Synchronisation active</span></label>
+              <div className="form-field"><label htmlFor="stats-timezone-default">Fuseau horaire par défaut</label><Input id="stats-timezone-default" value={stats.timezone} onChange={(event) => setStats((current) => ({ ...current, timezone: event.target.value }))} placeholder="UTC" /></div>
+              <div className="form-field"><label htmlFor="stats-tools-default">Détail des outils</label><Select id="stats-tools-default" value={stats.tools} onChange={(event) => setStats((current) => ({ ...current, tools: event.target.value as StatsSettings['tools'] }))}><option value="none">Aucun détail</option><option value="summary">Résumé</option><option value="detail">Détail</option></Select></div>
+              <div className="form-field"><label htmlFor="stats-granularity-default">Granularité par défaut</label><Select id="stats-granularity-default" value={stats.granularity} onChange={(event) => setStats((current) => ({ ...current, granularity: event.target.value as StatsSettings['granularity'] }))}><option value="daily">Journalière</option><option value="monthly">Mensuelle</option></Select></div>
             </div>
           </CardContent>
         </Card>

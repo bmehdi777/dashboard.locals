@@ -24,7 +24,7 @@ func NewHandler(config Config) http.Handler {
 	apiHandler := v1.NewHandler(config.API)
 	staticFS := config.StaticFS
 	if staticFS == nil {
-		staticFS, _ = fs.Sub(webassets.Embedded, "static")
+		staticFS = webassets.DefaultFS()
 	}
 	static := http.FileServer(http.FS(staticFS))
 	logger := config.Logger

@@ -13,6 +13,7 @@ export function OpenCodeBadge({ state }: { state: OpenCodeState }) {
   const labels: Record<OpenCodeState, string> = {
     available: 'OpenCode connecté',
     missing: 'OpenCode absent',
+    absent: 'OpenCode absent',
     stopped: 'OpenCode arrêté',
     incompatible: 'OpenCode incompatible',
     unauthenticated: 'OpenCode non authentifié',
