@@ -1,0 +1,41 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# Répertoires et artefacts de build
+/bin/
+/build/
+/dist/
+
+# JavaScript / React / TypeScript
+**/node_modules/
+**/dist-ssr/
+**/.vite/
+**/.cache/
+**/coverage/
+**/*.local
+
+# Journaux des gestionnaires de paquets
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Variables d'environnement locales
+**/.env
+**/.env.*
+!**/.env.example
+
+# Éditeurs et fichiers système
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
