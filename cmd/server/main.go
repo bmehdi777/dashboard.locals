@@ -94,15 +94,6 @@ func run(logger *log.Logger) error {
 	})
 	server := httpserver.New(runtimeConfig.ListenAddr, handler, runtimeConfig.HTTPReadTimeout, runtimeConfig.HTTPWriteTimeout, runtimeConfig.HTTPIdleTimeout)
 
-	// OpenCode is optional. Detection is deliberately asynchronous so a broken
-	// or stopped local instance cannot delay the local search server.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), runtimeConfig.OpenCodeTimeout)
-		defer cancel()
-		detection := detector.Detect(ctx)
-		logger.Printf("opencode state=%s executable=%t", detection.State, detection.ExecutableAvailable)
-	}()
-
 	shutdownContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	listener, err := net.Listen("tcp", runtimeConfig.ListenAddr)
@@ -110,6 +101,10 @@ func run(logger *log.Logger) error {
 		return err
 	}
 	logger.Printf("server started at http://%s", listener.Addr().String())
+	// OpenCode is optional. The initial synchronization runs in the background
+	// so the HTTP server is immediately available; the stats service serializes
+	// it with any manual synchronization started from the UI or CLI.
+	go synchronizeStatsAtStartup(shutdownContext, statsService, settings, logger)
 	serverErrors := make(chan error, 1)
 	go func() {
 		serverErrors <- server.Serve(listener)
@@ -125,6 +120,29 @@ func run(logger *log.Logger) error {
 		defer cancel()
 		return server.Shutdown(ctx)
 	}
+}
+
+func synchronizeStatsAtStartup(ctx context.Context, service *stats.Service, settings config.Settings, logger *log.Logger) {
+	if !settings.OpenCode.Enabled {
+		logger.Printf("startup opencode sync skipped: integration disabled")
+		return
+	}
+	startupContext, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	result, err := service.Sync(startupContext, stats.Query{
+		Timezone:    settings.Stats.Timezone,
+		Tools:       settings.Stats.Tools,
+		Granularity: settings.Stats.Granularity,
+	})
+	if err != nil {
+		state := result.Detection.State
+		if state == "" {
+			state = "unknown"
+		}
+		logger.Printf("startup opencode sync skipped: state=%s", state)
+		return
+	}
+	logger.Printf("startup opencode sync completed: raw_created=%d raw_existing=%d aggregates_created=%d aggregates_updated=%d", result.RawCreated, result.RawExisting, result.AggregatesCreated, result.AggregatesUpdated)
 }
 
 func minDuration(settingsValue, operationalValue time.Duration) time.Duration {

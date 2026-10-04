@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"dashboard.locals/internal/opencode"
@@ -35,6 +36,7 @@ type TransactionRepository interface {
 }
 
 type Service struct {
+	operationMu        sync.Mutex
 	repo               TransactionRepository
 	connector          Connector
 	defaultTimezone    string
@@ -160,6 +162,9 @@ func (s *Service) Get(ctx context.Context, query Query) (View, error) {
 }
 
 func (s *Service) Sync(ctx context.Context, query Query) (SyncResult, error) {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+
 	normalized, err := s.normalizeQuery(query)
 	if err != nil {
 		return SyncResult{}, err
@@ -275,6 +280,9 @@ func splitPeriods(from, to time.Time, granularity, timezone string) ([]period, e
 }
 
 func (s *Service) Compact(ctx context.Context, request CompactRequest) (CompactResult, error) {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+
 	if request.Before.IsZero() {
 		return CompactResult{}, errors.New("before is required")
 	}

@@ -26,6 +26,60 @@ make quality
 make build-server
 ```
 
+## Installation
+
+L'installation par défaut est prévue pour l'utilisateur courant et utilise
+`systemd --user`. Elle ne nécessite pas `sudo` : le serveur doit conserver le
+même utilisateur que la CLI afin d'accéder à la base SQLite, aux racines de
+recherche et à l'état local d'OpenCode.
+
+```sh
+make install
+```
+
+Les exécutables sont installés dans `~/.local/bin` et le service dans
+`~/.config/systemd/user/dashboard.locals.service`. Ajoutez le répertoire des
+exécutables au `PATH` si nécessaire :
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Vérifier le service :
+
+```sh
+systemctl --user status dashboard.locals.service
+dashboard server health
+journalctl --user -u dashboard.locals.service
+```
+
+Les variables `PREFIX`, `BINDIR`, `SYSTEMD_USER_DIR`, `SERVICE_NAME`,
+`INSTALL` et `SYSTEMCTL` peuvent être surchargées lors de l'installation. Par
+exemple :
+
+```sh
+make install PREFIX="$HOME/.local"
+```
+
+Le fichier optionnel `~/.config/dashboard.locals/service.env` peut contenir
+des variables d'environnement opérationnelles, par exemple
+`DASHBOARD_LOCALS_LISTEN_ADDR=127.0.0.1:9090`. Il est chargé par systemd et
+n'est pas remplacé par les mises à jour.
+
+Pour mettre à jour l'installation, il suffit de reconstruire le projet puis de
+relancer la même cible :
+
+```sh
+git pull
+make install
+```
+
+Les binaires sont remplacés atomiquement, le service est rechargé puis
+redémarré, et les données de `~/.config/dashboard.locals` ne sont pas
+supprimées. Le démarrage automatique sans session utilisateur ouverte peut
+être activé séparément avec `loginctl enable-linger "$USER"` si cela est
+nécessaire.
+
 La collection Bruno contenant les requêtes de l'API se trouve dans
 `.bruno`. L'environnement `local` utilise par défaut
 `http://127.0.0.1:8080`.

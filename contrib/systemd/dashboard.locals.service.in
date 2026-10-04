@@ -1,0 +1,17 @@
+[Unit]
+Description=dashboard.locals local daemon
+
+[Service]
+Type=simple
+ExecStart=@EXEC_START@
+WorkingDirectory=%h
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateTmp=true
+EnvironmentFile=-%h/.config/dashboard.locals/service.env
+
+[Install]
+WantedBy=default.target
