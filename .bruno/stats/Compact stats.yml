@@ -1,0 +1,27 @@
+info:
+  name: Compact statistics (dry run)
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/stats/compact"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "before": "2026-01-01T00:00:00Z",
+        "granularity": "daily",
+        "dryRun": true,
+        "dropRaw": false
+      }
+  auth: none
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

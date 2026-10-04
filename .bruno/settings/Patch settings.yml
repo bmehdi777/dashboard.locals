@@ -1,0 +1,35 @@
+info:
+  name: Patch settings
+  type: http
+  seq: 2
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/v1/settings"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "search": {
+          "respectGitignore": true,
+          "includeBinary": false,
+          "literal": false,
+          "maxResults": 500,
+          "timeout": "10s"
+        },
+        "stats": {
+          "timezone": "UTC",
+          "tools": "summary",
+          "granularity": "daily"
+        }
+      }
+  auth: none
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

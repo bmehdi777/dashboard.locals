@@ -1,0 +1,26 @@
+info:
+  name: Synchronize OpenCode statistics
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/stats/sync"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "granularity": "daily",
+        "timezone": "UTC",
+        "tools": "summary"
+      }
+  auth: none
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

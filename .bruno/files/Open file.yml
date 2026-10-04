@@ -1,0 +1,27 @@
+info:
+  name: Open file in editor
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/files/open"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "rootId": "{{rootId}}",
+        "path": "cmd/server/main.go",
+        "line": 1,
+        "column": 1
+      }
+  auth: none
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

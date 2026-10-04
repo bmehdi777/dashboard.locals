@@ -1,0 +1,15 @@
+info:
+  name: Delete search root
+  type: http
+  seq: 4
+
+http:
+  method: DELETE
+  url: "{{baseUrl}}/api/v1/search-roots/{{rootId}}"
+  auth: none
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

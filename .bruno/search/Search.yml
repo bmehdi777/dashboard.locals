@@ -1,0 +1,30 @@
+info:
+  name: Search with ripgrep
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/search"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "rootId": "{{rootId}}",
+        "query": "TODO",
+        "literal": true,
+        "respectGitignore": true,
+        "includeBinary": false,
+        "maxResults": 100,
+        "timeoutMs": 10000
+      }
+  auth: none
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
